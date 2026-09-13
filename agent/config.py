@@ -28,6 +28,8 @@ CYCLE_SECONDS = _env("CYCLE_SECONDS", 600, int)  # 10 min. Weather moves intrada
 DB_PATH = _env("DB_PATH", "/data/agent.db")
 PORT = _env("PORT", 8080, int)
 LOG_LEVEL = _env("LOG_LEVEL", "INFO")
+# Dashboard only: multiply displayed dollar amounts (contract prices stay real). Trading math ignores it.
+DISPLAY_MULT = _env("DISPLAY_MULT", 10.0, float)
 
 # ---- Strategy -------------------------------------------------------------
 # Net edge (model prob - price - est. fee) required to open. Adaptive; this is the seed.

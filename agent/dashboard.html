@@ -180,7 +180,7 @@
 
   <div class="ledger">
     <div>
-      <div class="lbl">Equity, if sold now</div>
+      <div class="lbl">Equity, if sold now <span id="mult" style="margin-left:8px; color:#9a9186; letter-spacing:.04em; text-transform:none;"></span></div>
       <div id="eq" class="serif big">$—</div>
       <div style="font-size:14px; margin-top:8px; display:flex; gap:14px; flex-wrap:wrap;">
         <span id="since" style="font-weight:600;"></span><span id="start" class="mut"></span>
@@ -258,8 +258,10 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const fmt$ = v => (v==null?'–':(v<0?'−':'')+'$'+Math.abs(v).toFixed(2));
-const signed$ = v => (v==null?'–':(v<0?'− ':'+ ')+'$'+Math.abs(v).toFixed(2));
+let MULT = 1;   // display multiplier for dollar amounts (DISPLAY_MULT on the server)
+const fmt$ = v => (v==null?'–':(v<0?'−':'')+'$'+Math.abs(v*MULT).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+const signed$ = v => (v==null?'–':(v<0?'− ':'+ ')+'$'+Math.abs(v*MULT).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+const round$ = v => '$'+Math.round(v*MULT).toLocaleString();
 const pct = v => v==null?'–':Math.round(v*100)+'%';
 const cents = v => v==null?'–':Math.round(v*100)+'c';
 const ago = ts => { if(!ts) return '–'; const s=Math.max(0,Math.round(Date.now()/1000-ts)); return s<90?s+'s ago':Math.round(s/60)+' min ago'; };
@@ -283,7 +285,8 @@ function nameOf(ticker){   // KXLOWTLAX-26SEP13-T69 -> "Los Angeles low above 69
 /* ---------- ledger ---------- */
 let prevEq = null;
 function ledger(s){
-  SERIES = s.series || SERIES;
+  SERIES = s.series || SERIES; MULT = s.display_mult || 1;
+  $('#mult').textContent = MULT!==1 ? `×${MULT} display` : '';
   const eq = $('#eq'); const [d, c] = fmt$(s.equity).split('.');
   eq.innerHTML = `${d}<small>.${c}</small>`;
   if(prevEq!=null && s.equity!==prevEq){ eq.classList.remove('fu','fd'); void eq.offsetWidth; eq.classList.add(s.equity>prevEq?'fu':'fd'); }
@@ -294,7 +297,7 @@ function ledger(s){
   $('#inplay').textContent = fmt$(s.exposure); $('#inplay-sub').textContent = `${s.n_contracts} contracts · ${s.n_positions} positions`;
   $('#fair').textContent = fmt$(s.equity_mid); $('#fair-sub').textContent = signed$(s.unrealized_mid)+' at mid';
   $('#modelv').textContent = fmt$(s.equity_model);
-  $('#worst').textContent = '$'+Math.round(s.worst_case); $('#best').textContent = '$'+Math.round(s.best_case);
+  $('#worst').textContent = round$(s.worst_case); $('#best').textContent = round$(s.best_case);
   const span = Math.max(1, s.best_case - s.worst_case);
   $('#dot-now').style.left = `calc(${Math.min(100,Math.max(0,(s.equity - s.worst_case)/span*100))}% - 10px)`;
   $('#dot-model').style.left = `calc(${Math.min(100,Math.max(0,(s.equity_model - s.worst_case)/span*100))}% - 7px)`;
@@ -372,7 +375,7 @@ function equity(sc){
   if(e.length<2){ svg.innerHTML=`<text x="${L}" y="${H/2}" fill="#6d655a" font-size="12">one more cycle and this fills in</text>`; return; }
   const vals=e.map(r=>r.balance), lo=Math.min(...vals)*0.97, hi=Math.max(...vals)*1.03;
   const x=i=>L+(i/(e.length-1))*(W-L-R), y=v=>T+(1-(v-lo)/(hi-lo||1))*(H-T-B);
-  let g=''; for(let k=0;k<=2;k++){ const v=lo+(hi-lo)*k/2; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-4}" y="${y(v)+4}" fill="#6d655a" font-size="10" text-anchor="end">$${v.toFixed(0)}</text>`; }
+  let g=''; for(let k=0;k<=2;k++){ const v=lo+(hi-lo)*k/2; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-4}" y="${y(v)+4}" fill="#6d655a" font-size="10" text-anchor="end">$${(v*MULT).toFixed(0)}</text>`; }
   g+=`<polyline points="${vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#2a2620" stroke-width="2"/>`;
   g+=`<text x="${L}" y="${H-4}" fill="#6d655a" font-size="10">${dstr(e[0].ts)}</text><text x="${W-R}" y="${H-4}" fill="#6d655a" font-size="10" text-anchor="end">${dstr(e[e.length-1].ts)}</text>`;
   svg.innerHTML=g;

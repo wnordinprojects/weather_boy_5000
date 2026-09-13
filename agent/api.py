@@ -96,7 +96,7 @@ class Api:
         return dict(
             mode="DRY RUN" if config.DRY_RUN else ("HALTED" if self.a.halted else "LIVE"),
             threshold=self.a.threshold, last_cycle_ts=st.get("ts"), cycle_seconds=config.CYCLE_SECONDS,
-            days_ahead=config.DAYS_AHEAD, now=time.time(),
+            days_ahead=config.DAYS_AHEAD, now=time.time(), display_mult=config.DISPLAY_MULT,
             # money
             start_equity=round(start, 2), balance=round(cash, 2), exposure=round(exposure, 2),
             n_positions=len(pos), n_contracts=int(sum(p["count"] for p in pos)),
