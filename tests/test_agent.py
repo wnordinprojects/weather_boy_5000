@@ -94,6 +94,33 @@ def test_available_at_reads_bids_correctly():
     assert strategy.available_at({}, "yes", 0.5) == 0
 
 
+def test_price_band_blocks_extreme_prices():
+    fc = _fc([90] * 9 + [80])
+    m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
+             yes_bid_dollars="0.00", yes_ask_dollars="0.01", no_bid_dollars="0.99", no_ask_dollars="1.00", volume_24h_fp="9000")
+    assert strategy.evaluate(fc, m, 0.06) is None
+
+
+def test_observations_paginate():
+    pages = [{"features": [{"properties": {"timestamp": f"2026-09-13T{h:02d}:00:00+00:00",
+                                            "temperature": {"value": 20 + h, "unitCode": "wmoUnit:degC"}}} for h in range(10)] * 50,
+              "pagination": {"next": "https://x/next"}},
+             {"features": [{"properties": {"timestamp": "2026-09-13T23:00:00+00:00",
+                                            "temperature": {"value": 35.0, "unitCode": "wmoUnit:degC"}}}]}]
+    calls = []
+
+    class R:
+        def __init__(self, j): self.j = j
+        def raise_for_status(self): pass
+        def json(self): return self.j
+
+    def get(url, **kw):
+        calls.append(url)
+        return R(pages[len(calls) - 1])
+    obs = weather.fetch_observations("KMDW", datetime(2026, 9, 13, 5, tzinfo=ZoneInfo("UTC")), mock.Mock(get=get))
+    assert len(calls) == 2 and max(v for _, v in obs) == pytest.approx(95.0)
+
+
 def test_saturation_raises_threshold():
     fc = _fc([90] * 9 + [80])
     m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,

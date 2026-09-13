@@ -39,6 +39,10 @@ SATURATION_PENALTY = _env("SATURATION_PENALTY", 0.03, float)
 KELLY_FRACTION = _env("KELLY_FRACTION", 0.5, float)
 # Cap per event (all strikes on one city-day are correlated). Fraction of bankroll.
 MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.5, float)
+# Only open positions priced inside this band. A liquid 1c or 99c market that disagrees
+# with the model usually knows something about settlement that the model does not.
+MIN_OPEN_PRICE = _env("MIN_OPEN_PRICE", 0.03, float)
+MAX_OPEN_PRICE = _env("MAX_OPEN_PRICE", 0.97, float)
 # Reverse an open position when model edge flips against it by this much.
 EXIT_EDGE = _env("EXIT_EDGE", 0.15, float)
 # Taker fee estimate: Kalshi charges ~0.07 * p * (1-p) per contract on most series.

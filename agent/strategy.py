@@ -132,12 +132,14 @@ def evaluate(fc: Forecast, m, threshold) -> Candidate | None:
     p = p_yes(fc, m)
     sat = is_saturated(spread, vol)
     thr = threshold + (config.SATURATION_PENALTY if sat else 0.0)
-    # Extreme prices carry huge fee drag and little upside; require the model to be near-certain.
+    # Extreme prices are where the market has settlement information we lack (and fee
+    # drag is worst). Only open inside the tradeable band.
+    lo, hi = config.MIN_OPEN_PRICE, config.MAX_OPEN_PRICE
     cands = []
-    if ya < 0.99:
+    if lo <= ya <= hi:
         e = p - ya - fee(ya)
         cands.append(Candidate(m, "yes", p, ya, ya, fee(ya), e, sat, thr))
-    if na < 0.99:
+    if lo <= na <= hi:
         e = (1 - p) - na - fee(na)
         cands.append(Candidate(m, "no", 1 - p, na, 1 - na, fee(na), e, sat, thr))
     if not cands:
