@@ -146,11 +146,15 @@ def test_noise_cannot_cross_observed_floor():
     obs = [(datetime(2026, 9, 13, 17, tzinfo=ZoneInfo("UTC")), 80.0)]
     fut, left = weather.nowcast(hourly, obs, date(2026, 9, 13), "America/New_York", "high", now)
     assert left == 4 and fut.max() < 80          # evening hours are cooler than the 80 already seen
-    # low case symmetric: dawn low 60 observed, evening members stay above -> P(below 60) small
-    hourly_low = np.array([[62 + h * 0.5 for h in range(24)]] * 20, float)
-    obs_low = [(datetime(2026, 9, 13, 10, tzinfo=ZoneInfo("UTC")), 60.0)]
+    # low case: model ran 4F warm at dawn but is spot-on this afternoon -> dawn error must NOT
+    # be carried into the evening. Members cool to 58 by 23:00; recent obs match members exactly.
+    prof = [64 - abs(h - 5) * 0 + (0 if h < 15 else -(h - 15) * 0.9) for h in range(24)]   # flat 64 then cooling to ~56.8
+    hourly_low = np.array([prof] * 20, float)
+    ny = ZoneInfo("America/New_York")
+    obs_low = [(datetime(2026, 9, 13, 5, 30, tzinfo=ny), 60.0)] + \
+              [(datetime(2026, 9, 13, h, 30, tzinfo=ny), prof[h]) for h in (17, 18, 19)]
     fut_low, _ = weather.nowcast(hourly_low, obs_low, date(2026, 9, 13), "America/New_York", "low", now)
-    assert fut_low.min() > 60
+    assert fut_low.min() < 58            # evening cooling below the dawn low is still in play
 
 
 def test_saturation_raises_threshold():

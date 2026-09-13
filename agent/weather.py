@@ -92,34 +92,35 @@ def ensemble_daily_extremes(payload, target: date, kind: str) -> np.ndarray:
     return np.nanmax(m, axis=1) if kind == "high" else np.nanmin(m, axis=1)
 
 
-def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, local_now: datetime):
-    """Blend today's observations into each member's remaining-hours forecast.
+def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, local_now: datetime,
+            recent_hours: int = 3):
+    """Bias-correct each member by its error over the most RECENT observed hours, then take
+    the member's extreme over the remaining hours of the day.
 
-    For each member: error = observed extreme so far - member's extreme over hours already passed.
-    Shift the member's remaining hours by that error and return each member's corrected extreme
-    over the REMAINING hours only. The caller adds station noise and then applies the observed
-    floor/ceiling, so noise can never push a "no further change" member past the observation.
+    Using the recent error (not the error at the day's extreme) matters: a model that ran
+    4F warm at dawn says nothing about how it will do at 11pm. The caller adds station noise
+    and then applies the observed floor/ceiling.
     Returns (corrected future extreme per member, hours_left).
     """
     z = ZoneInfo(tz)
     hour_now = local_now.hour + local_now.minute / 60
     todays = [(ts.astimezone(z), v) for ts, v in obs if ts.astimezone(z).date() == target]
-    vals = np.array([v for _, v in todays])
-    obs_ext = float(vals.max() if kind == "high" else vals.min())
     passed = max(1, int(hour_now))                     # hours 0..passed-1 are behind us
-    past = members_hourly[:, :passed]
     future = members_hourly[:, passed:]
-    if kind == "high":
-        past_ext = np.nanmax(past, axis=1)
-        err = obs_ext - past_ext
-        if future.shape[1] == 0:
-            return np.full(members_hourly.shape[0], obs_ext), 0
-        return np.nanmax(future + err[:, None], axis=1), future.shape[1]
-    past_ext = np.nanmin(past, axis=1)
-    err = obs_ext - past_ext
     if future.shape[1] == 0:
-        return np.full(members_hourly.shape[0], obs_ext), 0
-    return np.nanmin(future + err[:, None], axis=1), future.shape[1]
+        vals = np.array([v for _, v in todays])
+        ext = float(vals.max() if kind == "high" else vals.min())
+        return np.full(members_hourly.shape[0], ext), 0
+    # Hourly mean of observations for the last `recent_hours` completed hours.
+    errs = []
+    for h in range(max(0, passed - recent_hours), passed):
+        vals = [v for t, v in todays if t.hour == h]
+        if vals:
+            errs.append(np.mean(vals) - members_hourly[:, h])
+    err = np.mean(errs, axis=0) if errs else np.zeros(members_hourly.shape[0])
+    corrected = future + err[:, None]
+    fut_ext = np.nanmax(corrected, axis=1) if kind == "high" else np.nanmin(corrected, axis=1)
+    return fut_ext, future.shape[1]
 
 
 def fetch_observations(station, start_utc: datetime, session=None, max_pages=6):
