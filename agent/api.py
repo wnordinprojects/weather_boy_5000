@@ -25,6 +25,17 @@ def cached(key, ttl, fn):
     return val
 
 
+def _thin(obs, max_points=300):
+    """Keep the chart payload small: at most ~300 points, always including the last one."""
+    if len(obs) <= max_points:
+        return obs
+    step = -(-len(obs) // max_points)
+    out = obs[::step]
+    if out[-1] != obs[-1]:
+        out.append(obs[-1])
+    return out
+
+
 def _fill_price(h):
     """Cost per contract on the outcome's own scale."""
     px = h["avg_fill"] if h["avg_fill"] is not None else h["yes_price"]
@@ -146,7 +157,7 @@ class Api:
             out.append(dict(series=series, city=meta.get("city", series), station=meta.get("station"), tz=meta.get("tz"),
                             kind=f["kind"], target_date=tgt, ts=f["ts"], median=f["median"], spread=f["spread"],
                             observed=f["observed"], locked=f["locked"], notes=f["notes"],
-                            fan=json.loads(f["fan_json"] or "[]"), obs=json.loads(f["obs_json"] or "[]"),
+                            fan=json.loads(f["fan_json"] or "[]"), obs=_thin(json.loads(f["obs_json"] or "[]")),
                             pct=json.loads(f["pct_json"] or "[]"), strikes=strikes,
                             local_now=datetime.now(z).isoformat()))
         return dict(cities=out, ts=time.time())
