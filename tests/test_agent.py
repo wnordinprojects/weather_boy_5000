@@ -45,7 +45,7 @@ def test_strike_parsing_and_probabilities():
     assert strategy.p_yes(fc, between) == pytest.approx(0.2)    # 80, 81
     assert strategy.p_yes(fc, below) == pytest.approx(0.2)      # 78, 79
     # ticker-only fallback
-    assert strategy.strike(dict(ticker="KXHIGHNY-26SEP13-T84")) == ("ge", 84.0, None)
+    assert strategy.strike(dict(ticker="KXHIGHNY-26SEP13-T84")) == ("gt", 84.0, None)
     assert strategy.strike(dict(ticker="KXHIGHNY-26SEP13-B80.5")) == ("between", 80, 81)
 
 
@@ -81,6 +81,17 @@ def test_plan_orders_buys_best_side_and_respects_event_budget():
     # holding the wrong side with a big reversed edge -> exit
     orders3, _ = strategy.plan_orders(fc, ms[:1], 100, {"E-T85": -10}, 0.06, 0)
     assert orders3 and orders3[0]["action"] == "exit" and orders3[0]["outcome"] == "yes" and orders3[0]["count"] == 10
+
+
+def test_available_at_reads_bids_correctly():
+    ob = {"yes_dollars": [["0.40", "10.00"], ["0.38", "5.00"]], "no_dollars": [["0.55", "7.00"], ["0.50", "3.00"]]}
+    # buy YES at 0.45: fills against NO bids at >= 0.55 -> 7
+    assert strategy.available_at(ob, "yes", 0.45) == 7
+    assert strategy.available_at(ob, "yes", 0.50) == 10
+    # buy NO at yes-price 0.40: fills against YES bids at >= 0.40 -> 10
+    assert strategy.available_at(ob, "no", 0.40) == 10
+    assert strategy.available_at(ob, "no", 0.41) == 0
+    assert strategy.available_at({}, "yes", 0.5) == 0
 
 
 def test_saturation_raises_threshold():
@@ -121,8 +132,12 @@ def test_ensemble_daily_max_and_build_forecast_with_obs():
     assert fc.samples.min() >= 89          # floor at observed max (rounded)
     assert not fc.locked
     fc2 = weather.build_forecast("KXHIGHNY", date(2026, 9, 13), "high", bias_f=0.8, session=sess,
-                                 now=now.replace(hour=20))
-    assert fc2.locked and abs(fc2.median - 89) <= 1
+                                 now=now.replace(hour=23))
+    # Late evening: members' remaining hours are cooler than the observed max -> collapses onto it.
+    assert not fc2.locked and abs(fc2.median - 89) <= 1 and fc2.spread < 1.0
+    fc3 = weather.build_forecast("KXHIGHNY", date(2026, 9, 13), "high", bias_f=0.8, session=sess,
+                                 now=now.replace(day=14, hour=9))
+    assert fc3.locked
 
 
 def test_full_cycle_with_mocked_kalshi(monkeypatch):
@@ -138,6 +153,7 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
              no_ask_dollars="0.60", volume_24h_fp="100", rules_primary="... Central Park (KNYC) ...")]}
     k.events.side_effect = lambda s, **kw: [ev] if s == "KXHIGHNY" else []
     k.place.return_value = {"order_id": "o1", "fill_count": "5.00", "average_fill_price": "0.45"}
+    k.orderbook.return_value = {"yes_dollars": [["0.40", "50.00"]], "no_dollars": [["0.55", "5.00"]]}
     fc = _fc([90] * 9 + [80])
     monkeypatch.setattr(A, "build_forecast", lambda *a, **kw: fc)
     monkeypatch.setattr(A, "datetime", _FixedDT)
@@ -148,6 +164,7 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     assert k.place.called
     args = k.place.call_args[0]
     assert args[0] == "KXHIGHNY-26SEP13-T85" and args[1] == "yes" and args[3] == 0.45
+    assert args[2] == 5   # capped to book depth (5 NO bids at 0.55)
     assert db.rows("SELECT COUNT(*) n FROM orders")[0]["n"] == 1
     # settlement
     k.market.return_value = {"status": "settled", "result": "yes"}

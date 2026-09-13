@@ -74,7 +74,3 @@ STATIONS = {
 LOW_SERIES = {f"KXLOWT{k[6:]}": v for k, v in STATIONS.items()}
 SERIES = {**STATIONS, **LOW_SERIES}
 
-# Local hour after which the day's high is almost certainly in (sun is down).
-HIGH_LOCKED_HOUR = 19
-# Local hour after which the day's low is almost certainly in (post-sunrise warming).
-LOW_LOCKED_HOUR = 10

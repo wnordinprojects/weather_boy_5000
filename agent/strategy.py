@@ -45,11 +45,11 @@ def strike(m):
         return "le", None, float(cp)
     if st == "between" and fl is not None and cp is not None:
         return "between", float(fl), float(cp)
-    # Fallback: ticker suffix. T92 = 92 or above. B80.5 = 80..81. Rare 'less' forms handled above.
+    # Fallback: ticker suffix. T79 = "greater than 79" (80 or above). B80.5 = 80..81.
     suf = m["ticker"].rsplit("-", 1)[-1]
     mt = re.match(r"^T(-?\d+(?:\.\d+)?)$", suf)
     if mt:
-        return "ge", float(mt.group(1)), None
+        return "gt", float(mt.group(1)), None
     mb = re.match(r"^B(-?\d+(?:\.\d+)?)$", suf)
     if mb:
         c = float(mb.group(1))
@@ -85,6 +85,28 @@ def kelly_contracts(p, price, bankroll, fraction):
         return 0
     dollars = fraction * f * bankroll
     return int(dollars / price + 1e-9)
+
+
+def available_at(orderbook, outcome, yes_price):
+    """Contracts we can take right now for `outcome` at YES-scale price `yes_price` or better.
+
+    The book lists bids only. A YES buyer fills against NO bids at 1 - yes_price;
+    a NO buyer fills against YES bids at yes_price.
+    """
+    def levels(key):
+        out = []
+        for lvl in orderbook.get(key) or []:
+            try:
+                p, q = float(lvl[0]), float(lvl[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if p > 1.5:      # legacy cents
+                p /= 100.0
+            out.append((p, q))
+        return out
+    if outcome == "yes":
+        return int(sum(q for p, q in levels("no_dollars") + levels("no") if 1 - p <= yes_price + 1e-9))
+    return int(sum(q for p, q in levels("yes_dollars") + levels("yes") if p >= yes_price - 1e-9))
 
 
 def is_saturated(spread, vol_24h):

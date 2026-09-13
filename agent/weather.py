@@ -64,22 +64,61 @@ def fetch_ensemble(lat, lon, tz, days=4, session=None):
     return r.json()
 
 
-def ensemble_daily_extremes(payload, target: date, kind: str) -> np.ndarray:
-    """Per-member daily max/min for `target` local date from hourly ensemble output."""
+def ensemble_hourly(payload, target: date) -> np.ndarray:
+    """(members x 24) hourly temps for `target` local date. NaN-only members dropped."""
     hourly = payload["hourly"]
     times = hourly["time"]
     idx = [i for i, t in enumerate(times) if t.startswith(target.isoformat())]
     if not idx:
-        return np.array([])
-    vals = []
+        return np.empty((0, 0))
+    rows = []
     for k, arr in hourly.items():
         if not k.startswith("temperature_2m"):
             continue
         col = np.array([arr[i] for i in idx], dtype=float)
         if np.isnan(col).all():
             continue
-        vals.append(np.nanmax(col) if kind == "high" else np.nanmin(col))
-    return np.array(vals, dtype=float)
+        rows.append(col)
+    return np.array(rows, dtype=float)
+
+
+def ensemble_daily_extremes(payload, target: date, kind: str) -> np.ndarray:
+    """Per-member daily max/min for `target` local date from hourly ensemble output."""
+    m = ensemble_hourly(payload, target)
+    if m.size == 0:
+        return np.array([])
+    return np.nanmax(m, axis=1) if kind == "high" else np.nanmin(m, axis=1)
+
+
+def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, local_now: datetime):
+    """Blend today's observations into each member's remaining-hours forecast.
+
+    For each member: error = observed extreme so far - member's extreme over hours already passed.
+    Shift the member's remaining hours by that error, then final = combine(observed, corrected remaining).
+    Late in the day this collapses onto the observation, which is what the market does too.
+    Returns (samples per member, hours_left).
+    """
+    z = ZoneInfo(tz)
+    hour_now = local_now.hour + local_now.minute / 60
+    todays = [(ts.astimezone(z), v) for ts, v in obs if ts.astimezone(z).date() == target]
+    vals = np.array([v for _, v in todays])
+    obs_ext = float(vals.max() if kind == "high" else vals.min())
+    passed = max(1, int(hour_now))                     # hours 0..passed-1 are behind us
+    past = members_hourly[:, :passed]
+    future = members_hourly[:, passed:]
+    if kind == "high":
+        past_ext = np.nanmax(past, axis=1)
+        err = obs_ext - past_ext
+        if future.shape[1] == 0:
+            return np.full(members_hourly.shape[0], obs_ext), 0
+        fut_ext = np.nanmax(future + err[:, None], axis=1)
+        return np.maximum(obs_ext, fut_ext), future.shape[1]
+    past_ext = np.nanmin(past, axis=1)
+    err = obs_ext - past_ext
+    if future.shape[1] == 0:
+        return np.full(members_hourly.shape[0], obs_ext), 0
+    fut_ext = np.nanmin(future + err[:, None], axis=1)
+    return np.minimum(obs_ext, fut_ext), future.shape[1]
 
 
 def fetch_observations(station, start_utc: datetime, session=None):
@@ -118,16 +157,14 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
     notes = []
 
     payload = fetch_ensemble(meta["lat"], meta["lon"], meta["tz"], session=session)
-    members = ensemble_daily_extremes(payload, target, kind)
-    if members.size == 0:
+    hourly = ensemble_hourly(payload, target)
+    if hourly.size == 0:
         raise RuntimeError(f"no ensemble data for {series} {target}")
-
-    # Bias (hourly sampling misses peaks; grid vs sensor) then inflate spread.
-    center = np.median(members) + (bias_f if kind == "high" else -bias_f)
-    dev = (members - np.median(members)) * config.SPREAD_INFLATION
+    members = np.nanmax(hourly, axis=1) if kind == "high" else np.nanmin(hourly, axis=1)
     rng = np.random.default_rng(int(target.strftime("%Y%m%d")))
     reps = max(1, 2000 // members.size)
-    samples = np.tile(center + dev, reps) + rng.normal(0, config.STATION_ERROR_F, members.size * reps)
+    sign = 1 if kind == "high" else -1
+    station_sd = config.STATION_ERROR_F
 
     obs_ext, n_obs = None, 0
     locked = False
@@ -139,20 +176,27 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
         except Exception as e:  # observations are an enhancement, never a blocker
             notes.append(f"obs unavailable: {e}")
         if obs_ext is not None:
-            hours_left = 24 - local_now.hour if target == local_now.date() else 0
-            lock_hour = config.HIGH_LOCKED_HOUR if kind == "high" else config.LOW_LOCKED_HOUR
-            locked = target < local_now.date() or local_now.hour >= lock_hour
+            # Only a finished day is locked. A high can still print at 11pm under a warm
+            # front and a calendar-day low often lands just before midnight.
+            locked = target < local_now.date()
             if locked:
-                # Rounding: climate reports use whole degrees; obs are sub-degree.
-                samples = obs_ext + rng.normal(0, 0.4, samples.size)
                 notes.append(f"locked on observed {kind} {obs_ext:.1f}F")
+                members = np.full(members.size, obs_ext)
+                station_sd = 0.3      # only rounding risk left
             else:
-                # Final extreme can't be below (above) what's already observed.
-                samples = np.maximum(samples, obs_ext) if kind == "high" else np.minimum(samples, obs_ext)
-                # As the day progresses, shrink toward the observed value.
-                w = min(1.0, max(0.0, 1 - hours_left / 14))
-                samples = (1 - w) * samples + w * np.maximum(samples, obs_ext) if kind == "high" else samples
-                notes.append(f"observed so far {obs_ext:.1f}F over {n_obs} obs")
+                members, hours_left = nowcast(hourly, obs, target, meta["tz"], kind, local_now)
+                # Uncertainty shrinks with the hours left in the day.
+                station_sd = config.STATION_ERROR_F * min(1.0, hours_left / 12)
+                notes.append(f"observed so far {obs_ext:.1f}F over {n_obs} obs, {hours_left}h left")
+
+    if obs_ext is None:
+        # Pure forecast: hourly sampling misses peaks; grid vs sensor. Bias is learned per station.
+        members = members + sign * bias_f
+    center = np.median(members)
+    dev = (members - center) * (1.0 if locked else config.SPREAD_INFLATION)
+    samples = np.tile(center + dev, reps) + rng.normal(0, station_sd, members.size * reps)
+    if obs_ext is not None and not locked:
+        samples = np.maximum(samples, obs_ext) if kind == "high" else np.minimum(samples, obs_ext)
 
     # Settlement is a whole-degree value; round samples so strike math is exact.
     samples = np.round(samples)

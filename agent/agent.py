@@ -12,7 +12,7 @@ import requests
 from . import config
 from .db import DB
 from .kalshi import Kalshi, KalshiError
-from .strategy import plan_orders, p_yes
+from .strategy import plan_orders, available_at
 from .weather import build_forecast, fetch_observations, observed_extreme
 
 log = logging.getLogger("agent")
@@ -115,8 +115,9 @@ class Agent:
                 for d in decisions:
                     self.db.decision(cycle_id=cycle_id, series=series, **d)
                 for o in orders:
-                    n_orders += self.execute(o, series)
-                    if o["action"] == "buy":
+                    filled = self.execute(o, series)
+                    n_orders += filled
+                    if filled and o["action"] == "buy" and not config.DRY_RUN:
                         bankroll -= o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"])
         self.db.c.execute("UPDATE cycles SET n_markets=?, n_orders=?, notes=? WHERE id=?",
                           (n_markets, n_orders, f"{time.time()-t0:.1f}s", cycle_id))
@@ -126,6 +127,19 @@ class Agent:
         log.info("cycle done: balance %.2f markets %d orders %d thr %.3f", bankroll, n_markets, n_orders, self.threshold)
 
     def execute(self, o, series):
+        # Top-of-book fields can be stale or empty. Size against the live book.
+        try:
+            ob = self.k.orderbook(o["ticker"], depth=10)
+            avail = available_at(ob, o["outcome"], o["yes_price"])
+        except KalshiError as e:
+            log.warning("orderbook %s: %s", o["ticker"], e)
+            avail = 0
+        if avail <= 0:
+            log.info("skip %s %s: no liquidity at %.2f", o["outcome"], o["ticker"], o["yes_price"])
+            return 0
+        if avail < o["count"]:
+            log.info("cap %s %s: %d -> %d (book depth)", o["outcome"], o["ticker"], o["count"], avail)
+            o["count"] = avail
         try:
             r = self.k.place(o["ticker"], o["outcome"], o["count"], o["yes_price"])
         except KalshiError as e:
