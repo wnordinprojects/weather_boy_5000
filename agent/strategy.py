@@ -148,12 +148,14 @@ def evaluate(fc: Forecast, m, threshold) -> Candidate | None:
     return best
 
 
-def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent):
+def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None):
     """Decide orders for one event. Returns (orders, decisions).
 
     positions: {ticker: signed contracts (+yes, -no)}
     event_spent: dollars already committed to this event
+    costs: {ticker: average cost per contract on the held outcome's scale}
     """
+    costs = costs or {}
     orders, decisions = [], []
     budget = config.MAX_EVENT_FRACTION * bankroll - event_spent
     cands = []
@@ -171,6 +173,9 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
         if held and held != c.outcome and c.edge >= config.EXIT_EDGE:
             # Edge flipped hard against an open position: reverse it (sell = buy the other side).
             action, count, reason = "exit", abs(pos), "edge reversed"
+        elif held == c.outcome and costs.get(m["ticker"]) and c.price < config.ADD_DRAWDOWN * costs[m["ticker"]]:
+            # The market has moved hard against us since entry. Do not average down.
+            reason = "market moved against position; not adding"
         elif c.edge >= c.threshold and (held is None or held == c.outcome):
             target = kelly_contracts(c.p, c.price, bankroll, config.KELLY_FRACTION)
             count = max(0, target - abs(pos))

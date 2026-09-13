@@ -46,6 +46,8 @@ DAYS_AHEAD = _env("DAYS_AHEAD", 0, int)
 # with the model usually knows something about settlement that the model does not.
 MIN_OPEN_PRICE = _env("MIN_OPEN_PRICE", 0.03, float)
 MAX_OPEN_PRICE = _env("MAX_OPEN_PRICE", 0.97, float)
+# Don't add to a position once its price has fallen below this fraction of our average cost.
+ADD_DRAWDOWN = _env("ADD_DRAWDOWN", 0.6, float)
 # Reverse an open position when model edge flips against it by this much.
 EXIT_EDGE = _env("EXIT_EDGE", 0.15, float)
 # Taker fee estimate: Kalshi charges ~0.07 * p * (1-p) per contract on most series.

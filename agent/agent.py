@@ -58,11 +58,19 @@ class Agent:
         pos_rows = self.k.positions()
         positions = {}
         event_spent = {}
+        costs = {}
         for r in pos_rows:
             n = float(r.get("position_fp") or r.get("position") or 0)
             if n == 0:
                 continue
             positions[r["ticker"]] = n
+            hist = self.db.order_history(r["ticker"])
+            filled = sum(h["fill_count"] for h in hist)
+            if filled:
+                costs[r["ticker"]] = sum(((h["avg_fill"] if h["avg_fill"] is not None else h["yes_price"])
+                                          if h["outcome"] == "yes" else
+                                          1 - (h["avg_fill"] if h["avg_fill"] is not None else h["yes_price"]))
+                                         * h["fill_count"] for h in hist) / filled
             ev = r["ticker"].rsplit("-", 1)[0]
             event_spent[ev] = event_spent.get(ev, 0.0) + abs(float(r.get("market_exposure_dollars") or 0))
 
@@ -120,7 +128,7 @@ class Agent:
                     self.db.skip(ticker=ev["event_ticker"], outcome="", reason=f"station mismatch CLI{cli.group(1)} vs {meta['station']}")
                     continue
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
-                                                event_spent.get(ev["event_ticker"], 0.0))
+                                                event_spent.get(ev["event_ticker"], 0.0), costs)
                 for d in decisions:
                     self.db.decision(cycle_id=cycle_id, series=series, **d)
                 for o in orders:

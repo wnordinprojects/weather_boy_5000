@@ -121,6 +121,30 @@ def test_observations_paginate():
     assert len(calls) == 2 and max(v for _, v in obs) == pytest.approx(95.0)
 
 
+def test_no_averaging_down():
+    fc = _fc([90] * 9 + [80])
+    m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
+             yes_bid_dollars="0.20", yes_ask_dollars="0.22", no_bid_dollars="0.78", no_ask_dollars="0.80", volume_24h_fp="10")
+    orders, dec = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.55})
+    assert orders == [] and "not adding" in dec[0]["reason"]
+    orders, _ = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.25})
+    assert orders and orders[0]["action"] == "buy"
+
+
+def test_noise_cannot_cross_observed_floor():
+    """Members that say 'no further warming' must not produce samples below the observed max."""
+    hourly = np.array([[60 + h if h < 14 else 74 - (h - 14) for h in range(24)]] * 20, float)
+    now = datetime(2026, 9, 13, 20, tzinfo=ZoneInfo("America/New_York"))
+    obs = [(datetime(2026, 9, 13, 17, tzinfo=ZoneInfo("UTC")), 80.0)]
+    fut, left = weather.nowcast(hourly, obs, date(2026, 9, 13), "America/New_York", "high", now)
+    assert left == 4 and fut.max() < 80          # evening hours are cooler than the 80 already seen
+    # low case symmetric: dawn low 60 observed, evening members stay above -> P(below 60) small
+    hourly_low = np.array([[62 + h * 0.5 for h in range(24)]] * 20, float)
+    obs_low = [(datetime(2026, 9, 13, 10, tzinfo=ZoneInfo("UTC")), 60.0)]
+    fut_low, _ = weather.nowcast(hourly_low, obs_low, date(2026, 9, 13), "America/New_York", "low", now)
+    assert fut_low.min() > 60
+
+
 def test_saturation_raises_threshold():
     fc = _fc([90] * 9 + [80])
     m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,

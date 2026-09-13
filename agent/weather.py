@@ -96,9 +96,10 @@ def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, l
     """Blend today's observations into each member's remaining-hours forecast.
 
     For each member: error = observed extreme so far - member's extreme over hours already passed.
-    Shift the member's remaining hours by that error, then final = combine(observed, corrected remaining).
-    Late in the day this collapses onto the observation, which is what the market does too.
-    Returns (samples per member, hours_left).
+    Shift the member's remaining hours by that error and return each member's corrected extreme
+    over the REMAINING hours only. The caller adds station noise and then applies the observed
+    floor/ceiling, so noise can never push a "no further change" member past the observation.
+    Returns (corrected future extreme per member, hours_left).
     """
     z = ZoneInfo(tz)
     hour_now = local_now.hour + local_now.minute / 60
@@ -113,14 +114,12 @@ def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, l
         err = obs_ext - past_ext
         if future.shape[1] == 0:
             return np.full(members_hourly.shape[0], obs_ext), 0
-        fut_ext = np.nanmax(future + err[:, None], axis=1)
-        return np.maximum(obs_ext, fut_ext), future.shape[1]
+        return np.nanmax(future + err[:, None], axis=1), future.shape[1]
     past_ext = np.nanmin(past, axis=1)
     err = obs_ext - past_ext
     if future.shape[1] == 0:
         return np.full(members_hourly.shape[0], obs_ext), 0
-    fut_ext = np.nanmin(future + err[:, None], axis=1)
-    return np.minimum(obs_ext, fut_ext), future.shape[1]
+    return np.nanmin(future + err[:, None], axis=1), future.shape[1]
 
 
 def fetch_observations(station, start_utc: datetime, session=None, max_pages=6):
