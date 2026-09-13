@@ -1,0 +1,80 @@
+"""All tunables in one place. Env vars override defaults.
+
+Every number here is a starting point. The agent adjusts EDGE_THRESHOLD and
+per-station bias on its own from settled results (see calibrate.py).
+"""
+import os
+
+
+def _env(name, default, cast=str):
+    v = os.environ.get(name)
+    if v is None or v == "":
+        return default
+    if cast is bool:
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return cast(v)
+
+
+# ---- Kalshi ---------------------------------------------------------------
+KALSHI_BASE = _env("KALSHI_BASE", "https://external-api.kalshi.com/trade-api/v2")
+KALSHI_KEY_ID = _env("KALSHI_KEY_ID", "")
+# Private key: either the PEM text itself (Railway secret) or a file path.
+KALSHI_PRIVATE_KEY = _env("KALSHI_PRIVATE_KEY", "")
+KALSHI_PRIVATE_KEY_PATH = _env("KALSHI_PRIVATE_KEY_PATH", "")
+
+# ---- Run mode -------------------------------------------------------------
+DRY_RUN = _env("DRY_RUN", False, bool)          # log decisions, place no orders
+CYCLE_SECONDS = _env("CYCLE_SECONDS", 600, int)  # 10 min. Weather moves intraday.
+DB_PATH = _env("DB_PATH", "/data/agent.db")
+PORT = _env("PORT", 8080, int)
+LOG_LEVEL = _env("LOG_LEVEL", "INFO")
+
+# ---- Strategy -------------------------------------------------------------
+# Net edge (model prob - price - est. fee) required to open. Adaptive; this is the seed.
+EDGE_THRESHOLD = _env("EDGE_THRESHOLD", 0.06, float)
+EDGE_MIN, EDGE_MAX = 0.04, 0.16
+# Extra edge demanded on markets that look bot-saturated (tight spread + heavy volume).
+SATURATION_PENALTY = _env("SATURATION_PENALTY", 0.03, float)
+# Kelly fraction. 0.5 = half Kelly. Full Kelly on correlated weather bets blows up.
+KELLY_FRACTION = _env("KELLY_FRACTION", 0.5, float)
+# Cap per event (all strikes on one city-day are correlated). Fraction of bankroll.
+MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.5, float)
+# Reverse an open position when model edge flips against it by this much.
+EXIT_EDGE = _env("EXIT_EDGE", 0.15, float)
+# Taker fee estimate: Kalshi charges ~0.07 * p * (1-p) per contract on most series.
+FEE_RATE = _env("FEE_RATE", 0.07, float)
+# Bench a series for this many days if its realized edge over the last N trades is negative.
+ROTATION_WINDOW = _env("ROTATION_WINDOW", 20, int)
+ROTATION_BENCH_DAYS = _env("ROTATION_BENCH_DAYS", 7, int)
+# Halt trading after this many consecutive API errors (bug guard, not a risk limit).
+MAX_CONSECUTIVE_ERRORS = 3
+
+# ---- Forecast model -------------------------------------------------------
+# Ensemble spreads are underdispersed and grid cells are not the ASOS sensor.
+# Inflate spread and add a floor of station error (deg F).
+SPREAD_INFLATION = _env("SPREAD_INFLATION", 1.3, float)
+STATION_ERROR_F = _env("STATION_ERROR_F", 1.6, float)
+# Hourly sampling misses the true daily max by a bit. Learned per station over time.
+DEFAULT_MAX_BIAS_F = _env("DEFAULT_MAX_BIAS_F", 0.8, float)
+ENSEMBLE_MODELS = _env("ENSEMBLE_MODELS", "gfs_seamless,ecmwf_ifs025,icon_seamless")
+
+# ---- Markets --------------------------------------------------------------
+# Candidate series. Discovery drops any with no open events. Add new cities here.
+# station: NWS/METAR ID used for intraday observations. lat/lon are the station.
+STATIONS = {
+    "KXHIGHNY":   dict(city="New York",     station="KNYC", lat=40.779, lon=-73.969, tz="America/New_York"),
+    "KXHIGHCHI":  dict(city="Chicago",      station="KMDW", lat=41.786, lon=-87.752, tz="America/Chicago"),
+    "KXHIGHMIA":  dict(city="Miami",        station="KMIA", lat=25.795, lon=-80.290, tz="America/New_York"),
+    "KXHIGHAUS":  dict(city="Austin",       station="KATT", lat=30.321, lon=-97.760, tz="America/Chicago"),
+    "KXHIGHLAX":  dict(city="Los Angeles",  station="KLAX", lat=33.938, lon=-118.389, tz="America/Los_Angeles"),
+    "KXHIGHDEN":  dict(city="Denver",       station="KDEN", lat=39.847, lon=-104.656, tz="America/Denver"),
+    "KXHIGHPHIL": dict(city="Philadelphia", station="KPHL", lat=39.873, lon=-75.241, tz="America/New_York"),
+}
+# Low-temp series share stations. Ticker family was renamed to KXLOWT* in Aug 2026.
+LOW_SERIES = {f"KXLOWT{k[6:]}": v for k, v in STATIONS.items()}
+SERIES = {**STATIONS, **LOW_SERIES}
+
+# Local hour after which the day's high is almost certainly in (sun is down).
+HIGH_LOCKED_HOUR = 19
+# Local hour after which the day's low is almost certainly in (post-sunrise warming).
+LOW_LOCKED_HOUR = 10
