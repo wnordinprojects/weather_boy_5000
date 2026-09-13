@@ -80,16 +80,34 @@ class Api:
     def summary(self):
         st = self.a.last_status or {}
         pnl = self.db.rows("SELECT COALESCE(SUM(pnl),0) p, COUNT(*) n, SUM(pnl>0) w FROM settlements")[0]
-        pos = self.positions()
-        unreal = sum(p["unrealized"] for p in pos["positions"])
-        exposure = sum(p["cost"] for p in pos["positions"])
+        pos = self.positions()["positions"]
+        cash = st.get("balance") or 0.0
+        exposure = sum(p["cost"] for p in pos)
+        v_bid = sum(p["value"] for p in pos)
+        v_mid = sum(p["value_mid"] for p in pos)
+        v_model = sum(p["value_model"] if p["value_model"] is not None else p["value_mid"] for p in pos)
+        start = self.db.get_state("start_equity")
+        if start is None:
+            first = self.db.rows("SELECT balance FROM cycles WHERE balance IS NOT NULL ORDER BY id LIMIT 1")
+            start = first[0]["balance"] if first else cash
+            self.db.set_state("start_equity", start)
+        fees = self.db.rows("SELECT COALESCE(SUM(fill_count),0) c FROM orders WHERE fill_count>0")[0]["c"]
+        today = self.db.rows("SELECT COALESCE(SUM(pnl),0) p FROM settlements WHERE ts > ?", (time.time() - 86400,))[0]["p"]
         return dict(
-            balance=st.get("balance"), mode="DRY RUN" if config.DRY_RUN else ("HALTED" if self.a.halted else "LIVE"),
+            mode="DRY RUN" if config.DRY_RUN else ("HALTED" if self.a.halted else "LIVE"),
             threshold=self.a.threshold, last_cycle_ts=st.get("ts"), cycle_seconds=config.CYCLE_SECONDS,
+            days_ahead=config.DAYS_AHEAD, now=time.time(),
+            # money
+            start_equity=round(start, 2), balance=round(cash, 2), exposure=round(exposure, 2),
+            n_positions=len(pos), n_contracts=int(sum(p["count"] for p in pos)),
+            value_bid=round(v_bid, 2), value_mid=round(v_mid, 2), value_model=round(v_model, 2),
+            unrealized=round(v_bid - exposure, 2), unrealized_mid=round(v_mid - exposure, 2),
+            unrealized_model=round(v_model - exposure, 2),
+            equity=round(cash + v_bid, 2), equity_mid=round(cash + v_mid, 2), equity_model=round(cash + v_model, 2),
+            best_case=round(cash + sum(p["count"] for p in pos), 2), worst_case=round(cash, 2),
+            pnl_since_start_bid=round(cash + v_bid - start, 2), pnl_since_start_mid=round(cash + v_mid - start, 2),
             settled_pnl=round(pnl["p"] or 0, 2), settled_n=pnl["n"], settled_wins=pnl["w"] or 0,
-            unrealized=round(unreal, 2), exposure=round(exposure, 2),
-            equity=round((st.get("balance") or 0) + exposure + unreal, 2),
-            days_ahead=config.DAYS_AHEAD, now=time.time())
+            settled_24h=round(today or 0, 2), contracts_traded=int(fees))
 
     def positions(self):
         rows = self._positions()
@@ -107,16 +125,21 @@ class Api:
             cost_each = (sum(_fill_price(h) * h["fill_count"] for h in hist) / sum(h["fill_count"] for h in hist)) if hist else None
             m = mk.get(t, {})
             yb, ya, nb, na, vol, spread = prices(m) if m else (0, 1, 0, 1, 0, 1)
-            # Mark at the price we could exit at: bid on our side.
-            mark = yb if outcome == "yes" else nb
+            bid, ask = (yb, ya) if outcome == "yes" else (nb, na)
+            mid = (bid + ask) / 2
             cnt = abs(n)
-            cost = (cost_each or mark) * cnt
+            ce = cost_each if cost_each is not None else mid
+            cost = ce * cnt
             d = dec.get(t, {})
+            p = d.get("p_model") if d.get("outcome") == outcome else (1 - d["p_model"] if d else None)
             out.append(dict(ticker=t, event=t.rsplit("-", 1)[0], series=t.split("-")[0], outcome=outcome, count=cnt,
-                            cost_each=round(cost_each, 3) if cost_each else None, mark=round(mark, 2),
-                            cost=round(cost, 2), value=round(mark * cnt, 2),
-                            unrealized=round((mark - (cost_each or mark)) * cnt, 2),
-                            p_model=d.get("p_model") if d.get("outcome") == outcome else (1 - d["p_model"] if d else None),
+                            cost_each=round(ce, 3), cost=round(cost, 2),
+                            mark=round(bid, 2), mid=round(mid, 3), p_model=p,
+                            value=round(bid * cnt, 2), value_mid=round(mid * cnt, 2),
+                            value_model=round(p * cnt, 2) if p is not None else None,
+                            unrealized=round((bid - ce) * cnt, 2), unrealized_mid=round((mid - ce) * cnt, 2),
+                            unrealized_model=round((p - ce) * cnt, 2) if p is not None else None,
+                            win=round((1 - ce) * cnt, 2), lose=round(-cost, 2),
                             title=m.get("title") or m.get("yes_sub_title") or t, status=m.get("status"),
                             close_time=m.get("close_time")))
         out.sort(key=lambda p: (p["event"], p["ticker"]))

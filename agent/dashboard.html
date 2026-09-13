@@ -12,9 +12,9 @@
   .live { background:#173a2a; color:var(--up); } .dry { background:#3a3417; color:var(--warn); } .halt { background:#3a1717; color:var(--dn); }
   .mut { color:var(--mut); } .sp { flex:1; }
   main { padding:16px 20px; max-width:1500px; margin:0 auto; }
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-bottom:18px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
   .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .tile b { display:block; font-size:22px; font-weight:600; margin-top:2px; }
+  .tile b { display:block; font-size:20px; font-weight:600; margin-top:2px; white-space:nowrap; }
   .tile small { color:var(--mut); }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--mut); margin:22px 0 8px; }
   table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
@@ -55,7 +55,7 @@
 
   <h2>Open positions <span class="mut" id="poscount"></span></h2>
   <div class="wrap"><table id="positions"><thead><tr>
-    <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Mark</th><th class="num">Model</th><th class="num">Value</th><th class="num">Unrealized</th>
+    <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Paid</th><th class="num">Bid</th><th class="num">Mid</th><th class="num">Model</th><th class="num">In</th><th class="num">At bid</th><th class="num">At mid</th><th class="num">Model EV</th><th class="num">If win</th><th class="num">If lose</th>
   </tr></thead><tbody></tbody></table></div>
 
   <h2>Cities <span class="mut">observed trace, ensemble fan (10–90%), strikes with market price · model probability</span></h2>
@@ -104,11 +104,14 @@ async function get(p){ const r = await fetch(p, {cache:'no-store'}); if(!r.ok) t
 
 function tiles(s){
   const t = [
-    ['Equity', fmt$(s.equity), 'cash + positions at mark'],
-    ['Cash', fmt$(s.balance), 'Kalshi balance'],
-    ['In play', fmt$(s.exposure), 'cost of open positions'],
-    ['Unrealized', fmt$(s.unrealized), 'at exit price', cls(s.unrealized)],
-    ['Settled P&L', fmt$(s.settled_pnl), `${s.settled_wins}/${s.settled_n} won`, cls(s.settled_pnl)],
+    ['Started with', fmt$(s.start_equity), 'first balance seen'],
+    ['Cash', fmt$(s.balance), 'free in Kalshi'],
+    ['In play', fmt$(s.exposure), `${s.n_contracts} contracts, ${s.n_positions} positions`],
+    ['Equity (if sold now)', fmt$(s.equity), `${fmt$(s.pnl_since_start_bid)} since start · at bid`, cls(s.pnl_since_start_bid)],
+    ['Equity (fair)', fmt$(s.equity_mid), `${fmt$(s.pnl_since_start_mid)} since start · at mid`, cls(s.pnl_since_start_mid)],
+    ['Equity (model view)', fmt$(s.equity_model), 'if the model\'s odds are right', cls(s.equity_model - s.start_equity)],
+    ['Range at settlement', fmt$(s.worst_case)+' – '+fmt$(s.best_case), 'all lose → all win'],
+    ['Settled P&L', fmt$(s.settled_pnl), `${s.settled_wins}/${s.settled_n} won · ${fmt$(s.settled_24h)} last 24h`, cls(s.settled_pnl)],
     ['Edge threshold', (s.threshold*100).toFixed(1)+' pts', 'adapts to results'],
   ];
   $('#tiles').innerHTML = t.map(([l,v,sub,c])=>`<div class="tile"><small>${l}</small><b class="${c||''}">${v}</b><small>${sub}</small></div>`).join('');
@@ -123,9 +126,11 @@ function positions(p){
     const was = prevMark[x.ticker]; const fl = was==null||was===x.mark ? '' : (x.mark>was ? 'fu' : 'fd'); prevMark[x.ticker] = x.mark;
     return `<tr>
     <td title="${esc(x.ticker)}">${esc(x.title)}</td><td>${x.outcome.toUpperCase()}</td>
-    <td class="num">${x.count}</td><td class="num">${cents(x.cost_each)}</td><td class="num ${fl}">${cents(x.mark)}</td>
-    <td class="num">${pct(x.p_model)}</td><td class="num ${fl}">${fmt$(x.value)}</td>
-    <td class="num ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td></tr>`; }).join(''));
+    <td class="num">${x.count}</td><td class="num">${cents(x.cost_each)}</td><td class="num ${fl}">${cents(x.mark)}</td><td class="num ${fl}">${cents(x.mid)}</td>
+    <td class="num">${pct(x.p_model)}</td><td class="num">${fmt$(x.cost)}</td>
+    <td class="num ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td><td class="num ${cls(x.unrealized_mid)} ${fl}">${fmt$(x.unrealized_mid)}</td>
+    <td class="num ${cls(x.unrealized_model)}">${fmt$(x.unrealized_model)}</td>
+    <td class="num pos">${fmt$(x.win)}</td><td class="num neg">${fmt$(x.lose)}</td></tr>`; }).join(''));
 }
 
 function cityChart(c){
