@@ -87,8 +87,8 @@ class Agent:
                 kind = series_kind(series)
                 meta = config.SERIES[series]
                 today = datetime.now(ZoneInfo(meta["tz"])).date()
-                if tgt < today or tgt > today + timedelta(days=2):
-                    continue  # ensembles beyond 2-3 days add noise, not edge
+                if tgt < today or tgt > today + timedelta(days=config.DAYS_AHEAD):
+                    continue
                 key = (series, tgt)
                 if key not in fc_cache:
                     try:

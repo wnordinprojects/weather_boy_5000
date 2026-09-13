@@ -39,6 +39,9 @@ SATURATION_PENALTY = _env("SATURATION_PENALTY", 0.03, float)
 KELLY_FRACTION = _env("KELLY_FRACTION", 0.5, float)
 # Cap per event (all strikes on one city-day are correlated). Fraction of bankroll.
 MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.5, float)
+# How many days ahead to trade. 0 = same-day only (live observations are the edge).
+# Raise to 1-2 once per-station calibration has a week of data.
+DAYS_AHEAD = _env("DAYS_AHEAD", 0, int)
 # Only open positions priced inside this band. A liquid 1c or 99c market that disagrees
 # with the model usually knows something about settlement that the model does not.
 MIN_OPEN_PRICE = _env("MIN_OPEN_PRICE", 0.03, float)
