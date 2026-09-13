@@ -2,240 +2,395 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weather Boy 5000</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Anton&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-  :root { --bg:#0f1116; --card:#181b23; --line:#2a2f3a; --fg:#e6e8ee; --mut:#8b93a7; --up:#3ddc84; --dn:#ff5c5c; --acc:#7aa2ff; --warn:#ffb454; }
+  :root { --bg:#f6f1e7; --card:#fffdf8; --line:#e6dccb; --rule:#eee6d8; --ink:#2a2620; --mut:#6d655a; --faint:#9a9186; --chip:#efe6d5; --up:#2f7a4f; --dn:#b4541e; --obs:#e08a3c; --fan:#cfe0f2; }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 -apple-system, system-ui, Segoe UI, Roboto, sans-serif; }
-  header { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
-  header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
-  .pill { padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; }
-  .live { background:#173a2a; color:var(--up); } .dry { background:#3a3417; color:var(--warn); } .halt { background:#3a1717; color:var(--dn); }
-  .mut { color:var(--mut); } .sp { flex:1; }
-  main { padding:16px 20px; max-width:1500px; margin:0 auto; }
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
-  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .tile b { display:block; font-size:20px; font-weight:600; margin-top:2px; white-space:nowrap; }
-  .tile small { color:var(--mut); }
-  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--mut); margin:22px 0 8px; }
-  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-  th, td { padding:7px 10px; text-align:left; border-bottom:1px solid var(--line); font-size:13px; white-space:nowrap; }
-  th { color:var(--mut); font-weight:500; font-size:12px; }
+  [hidden] { display:none !important; }
+  body { margin:0; color:var(--ink); font:14px/1.45 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+         background:linear-gradient(180deg,#bfe0fb 0px,#dff0fd 260px,#f2f0e9 520px,var(--bg) 700px) fixed; }
+  .sky { position:absolute; left:0; right:0; top:0; height:420px; pointer-events:none; overflow:hidden; z-index:0; }
+  .sky svg { width:100%; height:100%; display:block; }
+  .cloud { animation:drift linear infinite; opacity:.9; }
+  @keyframes drift { from { transform:translateX(-160px) } to { transform:translateX(1560px) } }
+  .drop { animation:rain 1.1s linear infinite; } @keyframes rain { from { transform:translateY(-8px); opacity:0 } 20% { opacity:1 } to { transform:translateY(26px); opacity:0 } }
+  .bolt { animation:flash 6s ease-in-out infinite; } @keyframes flash { 0%,88%,100% { opacity:0 } 90%,94% { opacity:1 } 92% { opacity:.2 } }
+  .rays { transform-origin:center; animation:spin 90s linear infinite; } @keyframes spin { to { transform:rotate(360deg) } }
+  .flake { animation:fall 5s linear infinite; } @keyframes fall { from { transform:translateY(-6px) } to { transform:translateY(30px) } }
+  header, .ledger { z-index:1; }
+  .chrome { font-family:"Anton", Impact, "Arial Narrow", sans-serif; font-weight:400; font-size:44px; letter-spacing:.06em; line-height:1; text-transform:uppercase;
+            background:linear-gradient(180deg,#f4f6f8 0%,#d6dbe1 30%,#8b949e 50%,#e9edf1 55%,#5c646d 80%,#c9d0d6 100%); -webkit-background-clip:text; background-clip:text; color:transparent;
+            -webkit-text-stroke:1.2px #2a2620; paint-order:stroke fill; filter:drop-shadow(0 2px 0 rgba(20,25,30,.35)); position:relative; }
+  .chrome .eye { display:inline-block; width:.42em; height:.42em; border-radius:50%; background:radial-gradient(circle at 40% 40%,#ffb3a6,#e3170a 55%,#7a0a04); box-shadow:0 0 8px 2px rgba(227,23,10,.75); vertical-align:-.02em; margin:0 .02em; animation:eye 2.6s ease-in-out infinite; }
+  @keyframes eye { 0%,100% { box-shadow:0 0 6px 1px rgba(227,23,10,.6) } 50% { box-shadow:0 0 14px 4px rgba(227,23,10,.95) } }
+  .led { font-family:"IBM Plex Mono", monospace; font-weight:500; font-size:30px; color:#e3170a; text-shadow:0 0 6px rgba(227,23,10,.7), 0 0 14px rgba(227,23,10,.35); letter-spacing:.08em; margin-left:12px; vertical-align:.12em; }
+  .serif { font-family:"Newsreader", Georgia, "Times New Roman", serif; }
+  .mono { font-family:"IBM Plex Mono", Menlo, Consolas, monospace; font-variant-numeric:tabular-nums; }
+  .lbl { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mut); }
+  .mut { color:var(--mut); } .faint { color:var(--faint); } .sp { flex:1; }
+  .up { color:var(--up); } .dn { color:var(--dn); }
+  .page { max-width:1400px; margin:0 auto; padding:24px 40px 56px; position:relative; overflow:hidden; }
+  .sun { position:absolute; right:-160px; top:-200px; width:560px; height:560px; border-radius:50%; background:radial-gradient(circle,#ffd58a 0%,rgba(255,213,138,0) 68%); pointer-events:none; }
+  header { display:flex; align-items:baseline; gap:32px; position:relative; flex-wrap:wrap; }
+  header h1 { margin:0; display:flex; align-items:baseline; }
+  .tabs { display:flex; gap:24px; font-weight:500; }
+  .tabs .on { border-bottom:2px solid var(--ink); padding-bottom:4px; }
+  .tabs .off { color:var(--faint); }
+  .status { display:flex; align-items:center; gap:14px; font-size:13px; color:var(--mut); }
+  .live { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+  .live i { width:8px; height:8px; border-radius:50%; display:inline-block; background:var(--faint); }
+  .live.on i { background:var(--up); } .live.on { color:var(--up); }
+  .live.dry i { background:var(--obs); } .live.dry { color:var(--obs); }
+  .live.halt i { background:var(--dn); } .live.halt { color:var(--dn); }
+  .ledger { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:28px; align-items:end; margin-top:190px; position:relative; }
+  .big { font-size:96px; line-height:1; margin-top:6px; font-weight:500; letter-spacing:-.02em; white-space:nowrap; }
+  .big small { font-size:48px; color:var(--mut); }
+  .kv { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px 24px; }
+  .kv b { display:block; font-size:26px; font-weight:400; margin-top:2px; }
+  .kv small { font-size:12px; color:var(--mut); }
+  .range { border-left:1px solid #d9d0c2; padding-left:24px; }
+  .bar { flex:1; height:10px; border-radius:5px; background:linear-gradient(90deg,#e8b49b 0%,#efe6d5 30%,#bfd8c9 100%); position:relative; }
+  .dot { position:absolute; top:-5px; width:20px; height:20px; border-radius:50%; background:var(--ink); border:3px solid var(--bg); transition:left .6s ease; }
+  .dot.model { top:-2px; width:14px; height:14px; background:var(--bg); border:3px solid var(--ink); }
+  h2 { font-size:22px; font-weight:400; margin:0; }
+  .sec { margin-top:28px; position:relative; }
+  .sec-h { display:flex; align-items:baseline; gap:12px; margin-bottom:8px; flex-wrap:wrap; }
+  .sec-h .mut { font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:4px; }
+  table { width:100%; border-collapse:collapse; }
+  th { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--mut); padding:8px 10px; border-bottom:1px solid #d9d0c2; text-align:left; font-weight:500; white-space:nowrap; }
+  td { padding:9px 10px; border-bottom:1px solid var(--rule); font-size:13px; white-space:nowrap; }
   tr:last-child td { border-bottom:none; }
-  .num { text-align:right; font-variant-numeric: tabular-nums; }
-  .pos { color:var(--up); } .neg { color:var(--dn); }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(440px,1fr)); gap:12px; }
-  .city { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .city .hd { display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
-  .city .hd b { font-size:15px; }
-  .city svg { width:100%; height:220px; display:block; }
-  .strikes { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .strike { font-size:12px; padding:3px 7px; border-radius:6px; background:#1f2330; border:1px solid var(--line); }
-  .strike.held { border-color:var(--acc); }
-  .strike .p { color:var(--mut); }
+  .num { text-align:right; }
   .wrap { overflow-x:auto; }
-  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  @media (max-width:900px){ .two{grid-template-columns:1fr} .grid{grid-template-columns:1fr} }
-  .bar { height:6px; background:#2a2f3a; border-radius:3px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--acc); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px,1fr)); gap:18px; }
+  .city { background:var(--card); border:1px solid var(--line); border-radius:4px; padding:16px 18px; }
+  .city .hd { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .city .name { font-size:24px; }
+  .city .temp { font-size:40px; line-height:1; }
+  .city svg { width:100%; height:130px; display:block; margin-top:8px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; font-size:12px; }
+  .chip { background:var(--chip); padding:3px 8px; border-radius:3px; }
+  .chip.held { background:var(--ink); color:var(--bg); }
+  .three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:18px; }
+  @media (max-width:1100px){ .three{grid-template-columns:1fr} .ledger{grid-template-columns:1fr} .range{border-left:none;padding-left:0} }
+  @media (max-width:600px){ .page{padding:16px} .big{font-size:64px} .big small{font-size:32px} .grid{grid-template-columns:1fr} }
+  .log { display:grid; grid-template-columns:64px 1fr; gap:0 12px; align-items:baseline; font-size:13px; padding:4px 14px; }
+  .log > div { padding:8px 0; border-bottom:1px solid var(--rule); }
+  .log > div:nth-last-child(-n+2) { border-bottom:none; }
+  .empty { display:flex; align-items:center; gap:14px; padding:12px 14px; font-size:13px; color:var(--mut); }
+  .calbar { height:6px; background:var(--chip); border-radius:3px; overflow:hidden; } .calbar i { display:block; height:100%; }
+  @keyframes flashUp { from { background:#e3f0e6 } to { background:transparent } }
+  @keyframes flashDn { from { background:#fbeee6 } to { background:transparent } }
+  .fu { animation:flashUp 1.4s ease-out; } .fd { animation:flashDn 1.4s ease-out; }
+  @keyframes hop { 0%{transform:translateY(0)} 30%{transform:translateY(-9px)} 60%{transform:translateY(0)} 80%{transform:translateY(-4px)} 100%{transform:translateY(0)} }
+  .hop { animation:hop .9s ease-out 3; }
   #err { color:var(--dn); font-size:12px; }
-  @keyframes flashUp { from { background:#173a2a } to { background:transparent } }
-  @keyframes flashDn { from { background:#3a1717 } to { background:transparent } }
-  .fu { animation: flashUp 1.2s ease-out; } .fd { animation: flashDn 1.2s ease-out; }
-  #beat { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--up); margin-right:6px; opacity:.3; transition:opacity .2s; }
 </style>
-<header>
-  <h1>Weather Boy 5000</h1>
-  <span id="mode" class="pill dry">…</span>
-  <span class="mut" id="cycle">last cycle: …</span>
-  <span class="sp"></span>
-  <span id="err"></span>
-  <span class="mut"><i id="beat"></i><span id="poll">polling</span></span>
-</header>
-<main>
-  <div class="tiles" id="tiles"></div>
 
-  <h2>Open positions <span class="mut" id="poscount"></span></h2>
-  <div class="wrap"><table id="positions"><thead><tr>
-    <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Paid</th><th class="num">Bid</th><th class="num">Mid</th><th class="num">Model</th><th class="num">In</th><th class="num">At bid</th><th class="num">At mid</th><th class="num">Model EV</th><th class="num">If win</th><th class="num">If lose</th>
-  </tr></thead><tbody></tbody></table></div>
-
-  <h2>Cities <span class="mut">observed trace, ensemble fan (10–90%), strikes with market price · model probability</span></h2>
-  <div class="grid" id="cities"></div>
-
-  <div class="two">
-    <div>
-      <h2>Scorecard by city</h2>
-      <div class="wrap"><table id="byseries"><thead><tr><th>Series</th><th class="num">Trades</th><th class="num">Win %</th><th class="num">P&amp;L</th><th class="num">Avg edge</th></tr></thead><tbody></tbody></table></div>
-      <h2>Calibration <span class="mut">model probability vs. actual hit rate</span></h2>
-      <div class="wrap"><table id="cal"><thead><tr><th>Model said</th><th class="num">N</th><th class="num">Actually won</th><th style="width:40%">Gap</th></tr></thead><tbody></tbody></table></div>
+<div class="page">
+  <div class="sky" aria-hidden="true"><svg viewBox="0 0 1400 420" preserveAspectRatio="xMidYMin slice">
+    <defs>
+      <linearGradient id="hill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#cfe3c4"/><stop offset="1" stop-color="#f6f1e7"/></linearGradient>
+      <linearGradient id="bow" x1="0" x2="1"><stop offset="0" stop-color="#ff9a8b"/><stop offset=".25" stop-color="#ffd66b"/><stop offset=".5" stop-color="#b8e39a"/><stop offset=".75" stop-color="#8fd0ff"/><stop offset="1" stop-color="#c9b6ff"/></linearGradient>
+    </defs>
+    <!-- sun -->
+    <g transform="translate(1180 150)">
+      <g class="rays" stroke="#ffd58a" stroke-width="3" stroke-linecap="round" opacity=".8">
+        <line x1="0" y1="-60" x2="0" y2="-78"/><line x1="0" y1="60" x2="0" y2="78"/><line x1="-60" y1="0" x2="-78" y2="0"/><line x1="60" y1="0" x2="78" y2="0"/>
+        <line x1="-42" y1="-42" x2="-55" y2="-55"/><line x1="42" y1="42" x2="55" y2="55"/><line x1="-42" y1="42" x2="-55" y2="55"/><line x1="42" y1="-42" x2="55" y2="-55"/>
+      </g>
+      <circle r="46" fill="#ffd66b" stroke="#2a2620" stroke-width="2"/>
+      <circle r="60" fill="#ffd58a" opacity=".25"/>
+    </g>
+    <!-- rainbow -->
+    <path d="M 360 360 A 300 300 0 0 1 960 360" fill="none" stroke="url(#bow)" stroke-width="16" opacity=".4"/>
+    <g transform="translate(0 100)">
+    <!-- clouds drifting -->
+    <g class="cloud" style="animation-duration:120s">
+      <path d="M60 150 q-30 0 -30 -26 q2 -30 34 -30 q10 -28 42 -24 q26 4 30 28 q30 -4 34 24 q4 28 -26 28 z" fill="#ffffff" stroke="#2a2620" stroke-width="2"/>
+    </g>
+    <g class="cloud" style="animation-duration:170s; animation-delay:-60s">
+      <path d="M60 110 q-24 0 -24 -20 q2 -24 28 -24 q8 -22 34 -18 q20 4 24 22 q24 -4 28 18 q2 22 -22 22 z" fill="#ffffff" stroke="#2a2620" stroke-width="2" opacity=".95"/>
+    </g>
+    <!-- rain cloud -->
+    <g class="cloud" style="animation-duration:150s; animation-delay:-110s">
+      <path d="M60 130 q-30 0 -30 -26 q2 -30 34 -30 q10 -28 42 -24 q26 4 30 28 q30 -4 34 24 q4 28 -26 28 z" fill="#dfe8f0" stroke="#2a2620" stroke-width="2"/>
+      <g stroke="#6fa8dc" stroke-width="3" stroke-linecap="round">
+        <line class="drop" x1="50" y1="138" x2="46" y2="150" style="animation-delay:0s"/><line class="drop" x1="80" y1="138" x2="76" y2="150" style="animation-delay:.3s"/><line class="drop" x1="110" y1="138" x2="106" y2="150" style="animation-delay:.6s"/><line class="drop" x1="140" y1="138" x2="136" y2="150" style="animation-delay:.9s"/>
+      </g>
+    </g>
+    <!-- storm cloud -->
+    <g class="cloud" style="animation-duration:200s; animation-delay:-40s">
+      <path d="M60 90 q-30 0 -30 -26 q2 -30 34 -30 q10 -28 42 -24 q26 4 30 28 q30 -4 34 24 q4 28 -26 28 z" fill="#c8d2dc" stroke="#2a2620" stroke-width="2"/>
+      <path class="bolt" d="M92 96 l-14 26 h14 l-10 26 l30 -34 h-16 l12 -18 z" fill="#ffd66b" stroke="#2a2620" stroke-width="1.5" stroke-linejoin="round"/>
+    </g>
+    <!-- snow cloud -->
+    <g class="cloud" style="animation-duration:230s; animation-delay:-170s">
+      <path d="M60 70 q-24 0 -24 -20 q2 -24 28 -24 q8 -22 34 -18 q20 4 24 22 q24 -4 28 18 q2 22 -22 22 z" fill="#ffffff" stroke="#2a2620" stroke-width="2"/>
+      <g fill="#8fd0ff"><circle class="flake" cx="52" cy="80" r="3" style="animation-delay:0s"/><circle class="flake" cx="78" cy="84" r="3" style="animation-delay:1.6s"/><circle class="flake" cx="104" cy="80" r="3" style="animation-delay:3.2s"/></g>
+    </g>
+    </g>
+    <!-- hills -->
+    <path d="M0 370 q200 -60 420 -20 t380 -10 t360 20 t240 -10 v80 h-1400 z" fill="url(#hill)" opacity=".9"/>
+    <path d="M0 392 q260 -40 520 -10 t480 0 t400 10 v40 h-1400 z" fill="#e6efdb" opacity=".8"/>
+  </svg></div>
+  <header>
+    <h1><span class="chrome">Weather B<span class="eye"></span>y</span><span class="led">5000</span></h1>
+    <div class="tabs"><span class="on">Weather</span><span class="off">Sports</span><span class="off">Mentions</span></div>
+    <div class="sp"></div>
+    <div class="status">
+      <svg id="toad" viewBox="0 0 120 70" width="96" height="56" aria-label="lucky toad">
+        <ellipse cx="60" cy="52" rx="44" ry="16" fill="#8fae6b" stroke="#2a2620" stroke-width="2"/>
+        <ellipse cx="60" cy="40" rx="30" ry="18" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
+        <circle cx="44" cy="26" r="11" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="76" cy="26" r="11" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
+        <circle cx="44" cy="26" r="6" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/><circle cx="76" cy="26" r="6" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/>
+        <circle class="pupil" cx="45" cy="27" r="2.6" fill="#2a2620"/><circle class="pupil" cx="77" cy="27" r="2.6" fill="#2a2620"/>
+        <path d="M46 46 Q60 54 74 46" fill="none" stroke="#2a2620" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="30" cy="44" r="2" fill="#6f8e4c"/><circle cx="88" cy="42" r="2" fill="#6f8e4c"/><circle cx="64" cy="34" r="1.6" fill="#6f8e4c"/>
+        <path d="M22 58 q-8 6 -4 10 M98 58 q8 6 4 10" fill="none" stroke="#2a2620" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <span id="mode" class="live"><i></i>…</span>
+      <span id="cycle">cycle …</span>
+      <span id="clock" class="mono"></span>
+      <span id="err"></span>
     </div>
+  </header>
+
+  <div class="ledger">
     <div>
-      <h2>Equity <span class="mut">balance per cycle</span></h2>
-      <div class="city"><svg id="equity" style="height:160px"></svg></div>
-      <h2>Settlements</h2>
-      <div class="wrap"><table id="settled"><thead><tr><th>When</th><th>Market</th><th>Side</th><th>Result</th><th class="num">Qty</th><th class="num">Model</th><th class="num">P&amp;L</th></tr></thead><tbody></tbody></table></div>
+      <div class="lbl">Equity, if sold now</div>
+      <div id="eq" class="serif big">$—</div>
+      <div style="font-size:14px; margin-top:8px; display:flex; gap:14px; flex-wrap:wrap;">
+        <span id="since" style="font-weight:600;"></span><span id="start" class="mut"></span>
+      </div>
+    </div>
+    <div class="kv">
+      <div><div class="lbl">Cash</div><b id="cash" class="serif">—</b><small>free in Kalshi</small></div>
+      <div><div class="lbl">In play</div><b id="inplay" class="serif">—</b><small id="inplay-sub"></small></div>
+      <div><div class="lbl">Fair value</div><b id="fair" class="serif">—</b><small id="fair-sub">at mid</small></div>
+      <div><div class="lbl">Model view</div><b id="modelv" class="serif">—</b><small>if the odds are right</small></div>
+    </div>
+    <div class="range">
+      <div class="lbl">Range at settlement</div>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:14px;">
+        <span id="worst" class="serif" style="font-size:22px;">$—</span>
+        <div class="bar"><div id="dot-now" class="dot" title="if sold now" style="left:0%"></div><div id="dot-model" class="dot model" title="model view" style="left:0%"></div></div>
+        <span id="best" class="serif" style="font-size:22px;">$—</span>
+      </div>
+      <div class="mut" style="font-size:12px; margin-top:10px;">everything loses → everything wins · ● now  ○ model</div>
+      <div style="display:flex; gap:22px; margin-top:14px; font-size:13px;">
+        <div><span class="lbl">Settled</span><br><span id="settled" class="serif" style="font-size:20px;">$0.00</span> <span id="settled-sub" class="mut"></span></div>
+        <div><span class="lbl">Edge threshold</span><br><span id="thr" class="serif" style="font-size:20px;">—</span></div>
+      </div>
     </div>
   </div>
 
-  <div class="two">
+  <div class="sec">
+    <div class="sec-h"><h2 class="serif">Open positions</h2><span id="poscount" class="mut">marked at the price you could sell for right now</span></div>
+    <div class="card wrap"><table id="positions"><thead><tr>
+      <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Paid</th><th class="num">Bid</th><th class="num">Mid</th><th class="num">Model</th><th class="num">In</th><th class="num">At bid</th><th class="num">At mid</th><th class="num">Model EV</th><th class="num">If win</th><th class="num">If lose</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h"><h2 class="serif">Cities today</h2><span class="mut">orange: what the thermometer has done · blue: what the models expect · lines: strikes with market price and model odds</span></div>
+    <div class="grid" id="cities"></div>
+  </div>
+
+  <div class="sec three">
     <div>
-      <h2>Recent orders</h2>
-      <div class="wrap"><table id="orders"><thead><tr><th>When</th><th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Model</th><th class="num">Edge</th><th class="num">Filled</th></tr></thead><tbody></tbody></table></div>
+      <div class="sec-h"><h2 class="serif">Equity</h2></div>
+      <div class="card" style="padding:12px;"><svg id="equity" style="width:100%; height:150px; display:block;"></svg>
+        <div class="mut" style="font-size:12px; margin-top:4px;">balance per cycle</div></div>
+      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">By city</h2></div>
+      <div class="card" id="byseries-wrap"><div class="empty" id="byseries-empty">
+        <svg viewBox="0 0 120 60" width="96" height="48" aria-label="duck">
+          <path fill="none" stroke="#cfe0f2" stroke-width="3" stroke-linecap="round" d="M0 48 q15 -6 30 0 t30 0 t30 0 t30 0"><animate attributeName="d" values="M0 48 q15 -6 30 0 t30 0 t30 0 t30 0;M0 48 q15 6 30 0 t30 0 t30 0 t30 0;M0 48 q15 -6 30 0 t30 0 t30 0 t30 0" dur="3s" repeatCount="indefinite"/></path>
+          <ellipse cx="62" cy="40" rx="26" ry="12" fill="#f3d67a" stroke="#2a2620" stroke-width="2"/><path d="M84 40 q10 -4 14 -12" fill="none" stroke="#2a2620" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="42" cy="24" r="10" fill="#f3d67a" stroke="#2a2620" stroke-width="2"/><circle cx="39" cy="22" r="1.8" fill="#2a2620"/><path d="M32 26 l-10 2 l10 3 z" fill="#e08a3c" stroke="#2a2620" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg><span>No settlements yet. First results land overnight.</span></div>
+        <div class="wrap" hidden id="byseries-tbl"><table id="byseries"><thead><tr><th>City</th><th class="num">Trades</th><th class="num">Won</th><th class="num">P&amp;L</th><th class="num">Avg edge</th></tr></thead><tbody></tbody></table></div>
+      </div>
     </div>
     <div>
-      <h2>Passed on <span class="mut">last cycle, best edges it did not take</span></h2>
-      <div class="wrap"><table id="passes"><thead><tr><th>Market</th><th>Side</th><th class="num">Model</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th></tr></thead><tbody></tbody></table></div>
-      <h2>Skipped at execution</h2>
-      <div class="wrap"><table id="skips"><thead><tr><th>When</th><th>Market</th><th>Side</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+      <div class="sec-h"><h2 class="serif">Is the model honest?</h2></div>
+      <div class="card" style="padding:12px 14px;">
+        <div class="wrap"><table id="cal"><thead><tr><th>Model said</th><th class="num">N</th><th class="num">Won</th><th style="width:40%">gap</th></tr></thead><tbody></tbody></table></div>
+        <div class="mut" style="font-size:12px; margin-top:12px;">When the 70% bets win about 70% of the time, the odds are honest.</div>
+      </div>
+      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">Settled</h2></div>
+      <div class="card wrap"><table id="settled-tbl"><thead><tr><th>When</th><th>Market</th><th>Side</th><th>Result</th><th class="num">Qty</th><th class="num">Model</th><th class="num">P&amp;L</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div>
+      <div class="sec-h" style="align-items:center;"><h2 class="serif">What it did</h2>
+        <svg id="frog" viewBox="0 0 60 40" width="44" height="30" aria-label="frog"><g>
+          <ellipse cx="30" cy="26" rx="18" ry="9" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="22" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="38" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
+          <circle cx="23" cy="16" r="2" fill="#2a2620"/><circle cx="39" cy="16" r="2" fill="#2a2620"/><path d="M24 28 q6 4 12 0" fill="none" stroke="#2a2620" stroke-width="1.5" stroke-linecap="round"/></g></svg>
+        <span class="mut">hops on a new fill</span></div>
+      <div class="card"><div id="log" class="log"></div></div>
+      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">Passed on</h2><span class="mut">best edges it did not take</span></div>
+      <div class="card wrap"><table id="passes"><thead><tr><th>Market</th><th>Side</th><th class="num">Model</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th></tr></thead><tbody></tbody></table></div>
     </div>
   </div>
-</main>
+</div>
+
 <script>
 const $ = s => document.querySelector(s);
-const fmt$ = v => (v==null?'–':(v<0?'-':'')+'$'+Math.abs(v).toFixed(2));
+const fmt$ = v => (v==null?'–':(v<0?'−':'')+'$'+Math.abs(v).toFixed(2));
+const signed$ = v => (v==null?'–':(v<0?'− ':'+ ')+'$'+Math.abs(v).toFixed(2));
 const pct = v => v==null?'–':Math.round(v*100)+'%';
 const cents = v => v==null?'–':Math.round(v*100)+'c';
-const ago = ts => { if(!ts) return '–'; const s=Math.max(0,Math.round(Date.now()/1000-ts)); return s<90?s+'s ago':Math.round(s/60)+'m ago'; };
-const when = ts => new Date(ts*1000).toLocaleString([], {month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'});
-const cls = v => v>0?'pos':v<0?'neg':'';
+const ago = ts => { if(!ts) return '–'; const s=Math.max(0,Math.round(Date.now()/1000-ts)); return s<90?s+'s ago':Math.round(s/60)+' min ago'; };
+const tstr = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+const dstr = ts => new Date(ts*1000).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const cls = v => v>0?'up':v<0?'dn':'';
 const esc = s => String(s??'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const rows = (sel, html) => { $(sel+' tbody').innerHTML = html || '<tr><td colspan="9" class="mut">nothing yet</td></tr>'; };
-
+const rows = (sel, html, empty='nothing yet') => { $(sel+' tbody').innerHTML = html || `<tr><td colspan="13" class="mut">${empty}</td></tr>`; };
 async function get(p){ const r = await fetch(p, {cache:'no-store'}); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
 
-function tiles(s){
-  const t = [
-    ['Started with', fmt$(s.start_equity), 'first balance seen'],
-    ['Cash', fmt$(s.balance), 'free in Kalshi'],
-    ['In play', fmt$(s.exposure), `${s.n_contracts} contracts, ${s.n_positions} positions`],
-    ['Equity (if sold now)', fmt$(s.equity), `${fmt$(s.pnl_since_start_bid)} since start · at bid`, cls(s.pnl_since_start_bid)],
-    ['Equity (fair)', fmt$(s.equity_mid), `${fmt$(s.pnl_since_start_mid)} since start · at mid`, cls(s.pnl_since_start_mid)],
-    ['Equity (model view)', fmt$(s.equity_model), 'if the model\'s odds are right', cls(s.equity_model - s.start_equity)],
-    ['Range at settlement', fmt$(s.worst_case)+' – '+fmt$(s.best_case), 'all lose → all win'],
-    ['Settled P&L', fmt$(s.settled_pnl), `${s.settled_wins}/${s.settled_n} won · ${fmt$(s.settled_24h)} last 24h`, cls(s.settled_pnl)],
-    ['Edge threshold', (s.threshold*100).toFixed(1)+' pts', 'adapts to results'],
-  ];
-  $('#tiles').innerHTML = t.map(([l,v,sub,c])=>`<div class="tile"><small>${l}</small><b class="${c||''}">${v}</b><small>${sub}</small></div>`).join('');
-  const m = $('#mode'); m.textContent = s.mode; m.className = 'pill ' + (s.mode==='LIVE'?'live':s.mode==='HALTED'?'halt':'dry');
-  $('#cycle').textContent = 'last cycle: ' + ago(s.last_cycle_ts) + ' · every ' + Math.round(s.cycle_seconds/60) + ' min';
+let SERIES = {};
+function nameOf(ticker){   // KXLOWTLAX-26SEP13-T69 -> "Los Angeles low above 69°"
+  const [series, , suf] = ticker.split('-'); const m = SERIES[series];
+  const city = m ? m.city : series, kind = m ? m.kind : '';
+  let strike = suf || '';
+  const t = /^T(-?\d+(\.\d+)?)$/.exec(suf), b = /^B(-?\d+(\.\d+)?)$/.exec(suf);
+  if(t) strike = 'above '+t[1]+'°'; else if(b){ const c=parseFloat(b[1]); strike = Math.floor(c)+'–'+Math.ceil(c)+'°'; }
+  return `${city} ${kind} ${strike}`.trim();
 }
 
+/* ---------- ledger ---------- */
+let prevEq = null;
+function ledger(s){
+  SERIES = s.series || SERIES;
+  const eq = $('#eq'); const [d, c] = fmt$(s.equity).split('.');
+  eq.innerHTML = `${d}<small>.${c}</small>`;
+  if(prevEq!=null && s.equity!==prevEq){ eq.classList.remove('fu','fd'); void eq.offsetWidth; eq.classList.add(s.equity>prevEq?'fu':'fd'); }
+  prevEq = s.equity;
+  const since = $('#since'); since.textContent = signed$(s.pnl_since_start_bid)+' since start'; since.className = cls(s.pnl_since_start_bid);
+  $('#start').textContent = 'started with '+fmt$(s.start_equity);
+  $('#cash').textContent = fmt$(s.balance);
+  $('#inplay').textContent = fmt$(s.exposure); $('#inplay-sub').textContent = `${s.n_contracts} contracts · ${s.n_positions} positions`;
+  $('#fair').textContent = fmt$(s.equity_mid); $('#fair-sub').textContent = signed$(s.unrealized_mid)+' at mid';
+  $('#modelv').textContent = fmt$(s.equity_model);
+  $('#worst').textContent = '$'+Math.round(s.worst_case); $('#best').textContent = '$'+Math.round(s.best_case);
+  const span = Math.max(1, s.best_case - s.worst_case);
+  $('#dot-now').style.left = `calc(${Math.min(100,Math.max(0,(s.equity - s.worst_case)/span*100))}% - 10px)`;
+  $('#dot-model').style.left = `calc(${Math.min(100,Math.max(0,(s.equity_model - s.worst_case)/span*100))}% - 7px)`;
+  const st = $('#settled'); st.textContent = fmt$(s.settled_pnl); st.className = 'serif '+cls(s.settled_pnl); st.style.fontSize='20px';
+  $('#settled-sub').textContent = `${s.settled_wins} / ${s.settled_n} won`;
+  $('#thr').textContent = (s.threshold*100).toFixed(1)+' pts';
+  const m = $('#mode'); m.className = 'live ' + (s.mode==='LIVE'?'on':s.mode==='HALTED'?'halt':'dry');
+  m.innerHTML = '<i></i>' + (s.mode==='LIVE'?'Live':s.mode==='HALTED'?'Halted':'Dry run');
+  $('#cycle').textContent = 'cycle ' + ago(s.last_cycle_ts);
+}
+
+/* ---------- positions ---------- */
 const prevMark = {};
 function positions(p){
-  $('#poscount').textContent = p.positions.length ? `(${p.positions.length})` : '';
+  $('#poscount').textContent = (p.positions.length ? p.positions.length + ' · ' : '') + 'marked at the price you could sell for right now';
   rows('#positions', p.positions.map(x=>{
     const was = prevMark[x.ticker]; const fl = was==null||was===x.mark ? '' : (x.mark>was ? 'fu' : 'fd'); prevMark[x.ticker] = x.mark;
-    return `<tr>
-    <td title="${esc(x.ticker)}">${esc(x.title)}</td><td>${x.outcome.toUpperCase()}</td>
-    <td class="num">${x.count}</td><td class="num">${cents(x.cost_each)}</td><td class="num ${fl}">${cents(x.mark)}</td><td class="num ${fl}">${cents(x.mid)}</td>
-    <td class="num">${pct(x.p_model)}</td><td class="num">${fmt$(x.cost)}</td>
-    <td class="num ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td><td class="num ${cls(x.unrealized_mid)} ${fl}">${fmt$(x.unrealized_mid)}</td>
-    <td class="num ${cls(x.unrealized_model)}">${fmt$(x.unrealized_model)}</td>
-    <td class="num pos">${fmt$(x.win)}</td><td class="num neg">${fmt$(x.lose)}</td></tr>`; }).join(''));
+    return `<tr><td title="${esc(x.ticker)}">${esc(nameOf(x.ticker))}</td><td style="font-weight:600">${x.outcome.toUpperCase()}</td>
+      <td class="num mono">${x.count}</td><td class="num mono">${cents(x.cost_each)}</td><td class="num mono ${fl}">${cents(x.mark)}</td><td class="num mono ${fl}">${cents(x.mid)}</td>
+      <td class="num mono">${pct(x.p_model)}</td><td class="num mono">${fmt$(x.cost)}</td>
+      <td class="num mono ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td><td class="num mono ${cls(x.unrealized_mid)} ${fl}">${fmt$(x.unrealized_mid)}</td>
+      <td class="num mono ${cls(x.unrealized_model)}">${fmt$(x.unrealized_model)}</td>
+      <td class="num mono up">+${fmt$(x.win)}</td><td class="num mono dn">${fmt$(x.lose)}</td></tr>`; }).join(''), 'no open positions');
 }
 
+/* ---------- cities ---------- */
+const hourInTz = iso => { const m = iso.match(/T(\d\d):(\d\d)/); return m ? (+m[1] + (+m[2])/60) : 0; };
 function cityChart(c){
-  const W=600,H=220,L=34,R=10,T=10,B=22;
-  const fan = c.fan||[], obs = c.obs||[];
-  let vals = [];
-  fan.forEach(f=>vals.push(f[0],f[2])); obs.forEach(o=>vals.push(o[1]));
+  const W=400,H=130,L=30,R=10,T=14,B=18;
+  const fan=c.fan||[], obs=c.obs||[];
+  let vals=[]; fan.forEach(f=>vals.push(f[0],f[2])); obs.forEach(o=>vals.push(o[1]));
   c.strikes.forEach(s=>{ if(s.lo!=null) vals.push(s.lo); if(s.hi!=null) vals.push(s.hi); });
-  if(!vals.length) return '<svg viewBox="0 0 600 220"></svg>';
-  let lo=Math.floor(Math.min(...vals))-2, hi=Math.ceil(Math.max(...vals))+2;
-  const x = h => L + (h/24)*(W-L-R);
-  const y = v => T + (1-(v-lo)/(hi-lo))*(H-T-B);
-  let g = '';
-  for(let v=Math.ceil(lo/5)*5; v<=hi; v+=5) g += `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#2a2f3a"/><text x="${L-4}" y="${y(v)+4}" fill="#8b93a7" font-size="10" text-anchor="end">${v}°</text>`;
-  for(let h=0; h<=24; h+=6) g += `<text x="${x(h)}" y="${H-6}" fill="#8b93a7" font-size="10" text-anchor="middle">${h===24?'24':h}:00</text>`;
+  if(!vals.length) return '<svg viewBox="0 0 400 130"></svg>';
+  const lo=Math.floor(Math.min(...vals))-2, hi=Math.ceil(Math.max(...vals))+2;
+  const x=h=>L+(h/24)*(W-L-R), y=v=>T+(1-(v-lo)/(hi-lo))*(H-T-B);
+  let g='';
+  const step = (hi-lo)>20?10:5;
+  for(let v=Math.ceil(lo/step)*step; v<=hi; v+=step) g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-4}" y="${y(v)+4}" fill="#6d655a" font-size="10" text-anchor="end">${v}°</text>`;
   if(fan.length){
-    const up = fan.map((f,i)=>`${x(i+.5)},${y(f[2])}`).join(' ');
-    const dn = fan.map((f,i)=>`${x(i+.5)},${y(f[0])}`).reverse().join(' ');
-    g += `<polygon points="${up} ${dn}" fill="#7aa2ff" opacity=".18"/>`;
-    g += `<polyline points="${fan.map((f,i)=>`${x(i+.5)},${y(f[1])}`).join(' ')}" fill="none" stroke="#7aa2ff" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    const up=fan.map((f,i)=>`${x(i+.5)},${y(f[2])}`).join(' '), dn=fan.map((f,i)=>`${x(i+.5)},${y(f[0])}`).reverse().join(' ');
+    g+=`<polygon points="${up} ${dn}" fill="#cfe0f2" opacity=".85"/>`;
   }
-  // strikes: horizontal lines with price labels
   c.strikes.forEach(s=>{
-    const held = s.position;
-    const lvl = s.kind==='between' ? (s.lo+s.hi)/2 : (s.lo!=null ? s.lo+0.5 : s.hi-0.5);
-    const col = held ? '#3ddc84' : '#556';
-    if(s.kind==='between'){ g += `<rect x="${L}" y="${y(s.hi+0.5)}" width="${W-L-R}" height="${Math.max(1,y(s.lo-0.5)-y(s.hi+0.5))}" fill="${held?'#3ddc84':'#ffffff'}" opacity="${held?.12:.04}"/>`; }
-    else g += `<line x1="${L}" x2="${W-R}" y1="${y(lvl)}" y2="${y(lvl)}" stroke="${col}" stroke-width="1" opacity=".7"/>`;
-    const lab = (s.kind==='between'?`${s.lo}-${s.hi}`:(s.kind.startsWith('g')?`>${s.lo}`:`<${s.hi}`)) + ` ${Math.round(s.mid*100)}c`;
-    g += `<text x="${W-R-2}" y="${y(lvl)-2}" fill="${held?'#3ddc84':'#8b93a7'}" font-size="9" text-anchor="end">${lab}</text>`;
+    const held=s.position; const lab=(s.kind==='between'?`${s.lo}–${s.hi}`:(s.kind.startsWith('g')?`>${s.lo}`:`<${s.hi}`))+` · ${Math.round(s.mid*100)}c`+(s.p_yes!=null?` · ${pct(s.p_yes)}`:'')+(held?` · ${held.outcome.toUpperCase()} ×${held.count}`:'');
+    if(s.kind==='between'){ g+=`<rect x="${L}" y="${y(s.hi+0.5)}" width="${W-L-R}" height="${Math.max(1,y(s.lo-0.5)-y(s.hi+0.5))}" fill="#2a2620" opacity="${held?.14:.05}"/>`; g+=`<text x="${W-R-2}" y="${y(s.hi+0.5)-2}" fill="${held?'#2a2620':'#9a9186'}" font-size="9" text-anchor="end">${lab}</text>`; }
+    else { const lvl=s.lo!=null?s.lo+0.5:s.hi-0.5; g+=`<line x1="${L}" x2="${W-R}" y1="${y(lvl)}" y2="${y(lvl)}" stroke="${held?'#2a2620':'#9a9186'}" stroke-width="${held?2:1}" ${held?'':'stroke-dasharray="3 3"'}/><text x="${W-R-2}" y="${y(lvl)-3}" fill="${held?'#2a2620':'#9a9186'}" font-size="9" text-anchor="end">${lab}</text>`; }
   });
   if(obs.length){
-    const pts = obs.map(o=>`${x(hourInTz(o[0]))},${y(o[1])}`);
-    g += `<polyline points="${pts.join(' ')}" fill="none" stroke="#ffb454" stroke-width="2"/>`;
-    const last = obs[obs.length-1]; const h=hourInTz(last[0]);
-    g += `<circle cx="${x(h)}" cy="${y(last[1])}" r="3.5" fill="#ffb454"/><text x="${x(h)+6}" y="${y(last[1])+4}" fill="#ffb454" font-size="11">${last[1].toFixed(1)}°</text>`;
+    g+=`<polyline points="${obs.map(o=>`${x(hourInTz(o[0]))},${y(o[1])}`).join(' ')}" fill="none" stroke="#e08a3c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const last=obs[obs.length-1], h=hourInTz(last[0]);
+    g+=`<circle cx="${x(h)}" cy="${y(last[1])}" r="4.5" fill="#e08a3c"/>`;
   }
-  if(c.observed!=null){ g += `<line x1="${L}" x2="${W-R}" y1="${y(c.observed)}" y2="${y(c.observed)}" stroke="#ffb454" stroke-width="1" stroke-dasharray="2 3" opacity=".8"/>`; }
-  // local now marker
-  if(c.local_now){ const tzh = hourInTz(c.local_now); g += `<line x1="${x(tzh)}" x2="${x(tzh)}" y1="${T}" y2="${H-B}" stroke="#8b93a7" stroke-dasharray="2 2"/>`; }
+  if(c.local_now){ const h=hourInTz(c.local_now); g+=`<line x1="${x(h)}" x2="${x(h)}" y1="${T}" y2="${H-B}" stroke="#9a9186" stroke-dasharray="2 3"/>`; }
+  g+=`<text x="${L}" y="${H-4}" fill="#6d655a" font-size="10">0:00</text><text x="${x(12)}" y="${H-4}" fill="#6d655a" font-size="10" text-anchor="middle">12:00</text><text x="${W-R}" y="${H-4}" fill="#6d655a" font-size="10" text-anchor="end">24:00</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}</svg>`;
 }
-function hourInTz(iso){ // iso carries the station's offset; read wall-clock hour from the string
-  const m = iso.match(/T(\d\d):(\d\d)/); return m ? (+m[1] + (+m[2])/60) : 0;
-}
-
 function cities(d){
-  $('#cities').innerHTML = d.cities.map(c=>{
-    const pctTxt = c.pct && c.pct.length ? `5–95%: ${c.pct[0]}–${c.pct[4]}°` : '';
-    const chips = c.strikes.map(s=>{
-      const lab = s.kind==='between'?`${s.lo}–${s.hi}`:(s.kind.startsWith('g')?`> ${s.lo}`:`< ${s.hi}`);
-      const held = s.position ? ` · <b>${s.position.outcome.toUpperCase()} ×${s.position.count}</b>` : '';
-      return `<span class="strike ${s.position?'held':''}">${lab} <span class="p">${Math.round(s.mid*100)}c · model ${pct(s.p_yes)}</span>${held}</span>`;
-    }).join('');
-    return `<div class="city"><div class="hd"><b>${esc(c.city)} ${c.kind}</b><span class="mut">${c.target_date} · ${c.station}</span><span class="sp"></span>
-      <span class="mut">model ${c.median}° ${pctTxt}</span></div>
-      ${cityChart(c)}<div class="strikes">${chips}</div>
-      <div class="mut" style="font-size:11px;margin-top:4px">${esc(c.notes)} · updated ${ago(c.ts)}</div></div>`;
+  const order = d.cities.slice().sort((a,b)=> (b.strikes.some(s=>s.position)?1:0)-(a.strikes.some(s=>s.position)?1:0) || a.city.localeCompare(b.city) || a.kind.localeCompare(b.kind));
+  $('#cities').innerHTML = order.map(c=>{
+    const held = c.strikes.filter(s=>s.position);
+    const chips = c.strikes.map(s=>{ const lab=s.kind==='between'?`${s.lo}–${s.hi}`:(s.kind.startsWith('g')?`> ${s.lo}`:`< ${s.hi}`);
+      return `<span class="chip ${s.position?'held':''}">${lab} · ${Math.round(s.mid*100)}c${s.position?` · ${s.position.outcome.toUpperCase()} ×${s.position.count}`:''}</span>`; }).join('');
+    const obsTxt = c.observed!=null ? `${c.observed.toFixed(1)}°` : `${c.median}°`;
+    const note = (c.notes||'').replace(/observed so far [\d.]+F over \d+ obs, /,'').replace('h left','h left');
+    return `<div class="city"><div class="hd"><div><span class="serif name">${esc(c.city)}</span> <span class="mut" style="font-size:14px;">${c.kind} · ${esc(c.station)}</span></div><span class="serif temp">${obsTxt}</span></div>
+      <div class="mut" style="font-size:12px; margin-top:2px;">${c.observed!=null?'so far':'forecast'} · model ${c.median}° ${c.pct&&c.pct.length?`(${c.pct[0]}–${c.pct[4]}°)`:''} · ${esc(note)} · ${ago(c.ts)}</div>
+      ${cityChart(c)}<div class="chips">${chips}</div></div>`;
   }).join('') || '<div class="mut">no forecasts yet</div>';
 }
 
+/* ---------- scorecard ---------- */
 function equity(sc){
-  const e = sc.equity||[]; const svg = $('#equity'); const W=600,H=160,L=40,R=8,T=8,B=18;
-  if(e.length<2){ svg.innerHTML=''; svg.setAttribute('viewBox',`0 0 ${W} ${H}`); return; }
-  // obs-hour trace of balance; fold in unrealized only at the end (we only know it now)
-  const vals = e.map(r=>r.balance); const lo=Math.min(...vals)*0.98, hi=Math.max(...vals)*1.02;
+  const e=sc.equity||[], svg=$('#equity'), W=400,H=150,L=40,R=8,T=8,B=18;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
+  if(e.length<2){ svg.innerHTML=`<text x="${L}" y="${H/2}" fill="#6d655a" font-size="12">one more cycle and this fills in</text>`; return; }
+  const vals=e.map(r=>r.balance), lo=Math.min(...vals)*0.97, hi=Math.max(...vals)*1.03;
   const x=i=>L+(i/(e.length-1))*(W-L-R), y=v=>T+(1-(v-lo)/(hi-lo||1))*(H-T-B);
-  let g=''; for(let k=0;k<=3;k++){ const v=lo+(hi-lo)*k/3; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#2a2f3a"/><text x="${L-4}" y="${y(v)+4}" fill="#8b93a7" font-size="10" text-anchor="end">$${v.toFixed(0)}</text>`; }
-  g += `<polyline points="${vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#3ddc84" stroke-width="2"/>`;
-  g += `<text x="${L}" y="${H-4}" fill="#8b93a7" font-size="10">${when(e[0].ts)}</text><text x="${W-R}" y="${H-4}" fill="#8b93a7" font-size="10" text-anchor="end">${when(e[e.length-1].ts)}</text>`;
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none'); svg.innerHTML=g;
+  let g=''; for(let k=0;k<=2;k++){ const v=lo+(hi-lo)*k/2; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-4}" y="${y(v)+4}" fill="#6d655a" font-size="10" text-anchor="end">$${v.toFixed(0)}</text>`; }
+  g+=`<polyline points="${vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#2a2620" stroke-width="2"/>`;
+  g+=`<text x="${L}" y="${H-4}" fill="#6d655a" font-size="10">${dstr(e[0].ts)}</text><text x="${W-R}" y="${H-4}" fill="#6d655a" font-size="10" text-anchor="end">${dstr(e[e.length-1].ts)}</text>`;
+  svg.innerHTML=g;
 }
-
 function scorecard(sc){
-  rows('#byseries', sc.by_series.map(r=>`<tr><td>${r.series}</td><td class="num">${r.n}</td><td class="num">${pct(r.wins/r.n)}</td><td class="num ${cls(r.pnl)}">${fmt$(r.pnl)}</td><td class="num">${(r.avg_edge*100).toFixed(1)}</td></tr>`).join(''));
-  rows('#cal', sc.calibration.map(r=>{ const gap=(r.hit-r.bucket); return `<tr><td>${pct(r.bucket)}</td><td class="num">${r.n}</td><td class="num">${pct(r.hit)}</td><td><div class="bar"><i style="width:${Math.round(r.hit*100)}%;background:${Math.abs(gap)>0.15?'#ff5c5c':'#3ddc84'}"></i></div></td></tr>`; }).join(''));
+  const has = sc.by_series.length>0;
+  $('#byseries-empty').hidden = has; $('#byseries-tbl').hidden = !has;
+  rows('#byseries', sc.by_series.map(r=>`<tr><td>${esc((SERIES[r.series]||{}).city||r.series)} ${(SERIES[r.series]||{}).kind||''}</td><td class="num mono">${r.n}</td><td class="num mono">${pct(r.wins/r.n)}</td><td class="num mono ${cls(r.pnl)}">${fmt$(r.pnl)}</td><td class="num mono">${(r.avg_edge*100).toFixed(1)}</td></tr>`).join(''));
+  rows('#cal', sc.calibration.map(r=>{ const gap=r.hit-r.bucket; return `<tr><td class="mono">${pct(r.bucket)}</td><td class="num mono">${r.n}</td><td class="num mono">${pct(r.hit)}</td><td><div class="calbar"><i style="width:${Math.round(r.hit*100)}%;background:${Math.abs(gap)>0.15?'#b4541e':'#2f7a4f'}"></i></div></td></tr>`; }).join(''), 'fills in after the first settlements');
   equity(sc);
 }
 
+/* ---------- activity ---------- */
+let lastOrderKey = null;
 function activity(a){
-  rows('#orders', a.orders.map(o=>`<tr><td>${when(o.ts)}</td><td>${o.ticker}</td><td>${o.outcome.toUpperCase()}</td><td class="num">${o.count}</td><td class="num">${cents(o.outcome==='yes'?o.yes_price:1-o.yes_price)}</td><td class="num">${pct(o.p_model)}</td><td class="num">${(o.edge*100).toFixed(1)}</td><td class="num ${o.fill_count>0?'pos':''}">${o.order_id==='dry'?'dry':o.fill_count}</td></tr>`).join(''));
-  rows('#passes', a.passes.map(p=>`<tr><td>${p.ticker}</td><td>${p.outcome.toUpperCase()}</td><td class="num">${pct(p.p_model)}</td><td class="num">${cents(p.price)}</td><td class="num">${(p.edge*100).toFixed(1)}</td><td class="mut">${esc(p.reason)}</td></tr>`).join(''));
-  rows('#skips', a.skips.map(s=>`<tr><td>${when(s.ts)}</td><td>${s.ticker}</td><td>${(s.outcome||'').toUpperCase()}</td><td class="mut">${esc(s.reason)}</td></tr>`).join(''));
-  rows('#settled', a.settlements.map(s=>`<tr><td>${when(s.ts)}</td><td>${s.ticker}</td><td>${s.outcome.toUpperCase()}</td><td>${s.result.toUpperCase()}</td><td class="num">${s.count}</td><td class="num">${pct(s.p_model)}</td><td class="num ${cls(s.pnl)}">${fmt$(s.pnl)}</td></tr>`).join(''));
+  const items = [];
+  a.orders.forEach(o=>{ const price = o.outcome==='yes'?o.yes_price:1-o.yes_price;
+    const filled = o.order_id==='dry' ? 'Would have bought' : (o.fill_count>0 ? 'Bought' : 'Tried to buy');
+    items.push({ts:o.ts, html:`${filled} <b>${o.outcome.toUpperCase()}</b> ${esc(nameOf(o.ticker))} ×${o.fill_count>0?Math.round(o.fill_count):o.count} at ${cents(price)}. <span class="mut">Model ${pct(o.p_model)}, edge ${(o.edge*100).toFixed(0)}.</span>`}); });
+  a.skips.forEach(s=>items.push({ts:s.ts, html:`<span class="mut">Wanted <b>${(s.outcome||'').toUpperCase()}</b> ${esc(nameOf(s.ticker))}. Skipped: ${esc(s.reason)}.</span>`}));
+  items.sort((p,q)=>q.ts-p.ts);
+  $('#log').innerHTML = items.slice(0,14).map(i=>`<div class="mono mut">${tstr(i.ts)}</div><div>${i.html}</div>`).join('') || '<div class="mut">—</div><div class="mut">nothing yet</div>';
+  const top = a.orders.find(o=>o.fill_count>0); const key = top ? top.ts+top.ticker : null;
+  if(lastOrderKey!==null && key && key!==lastOrderKey){ const f=$('#frog'); f.classList.remove('hop'); void f.offsetWidth; f.classList.add('hop'); }
+  if(key) lastOrderKey = key; else if(lastOrderKey===null) lastOrderKey = '';
+  rows('#passes', a.passes.slice(0,12).map(p=>`<tr><td>${esc(nameOf(p.ticker))}</td><td>${p.outcome.toUpperCase()}</td><td class="num mono">${pct(p.p_model)}</td><td class="num mono">${cents(p.price)}</td><td class="num mono">${(p.edge*100).toFixed(1)}</td><td class="mut">${esc(p.reason)}</td></tr>`).join(''), 'nothing passed on');
+  rows('#settled-tbl', a.settlements.map(s=>`<tr><td class="mono mut">${dstr(s.ts)}</td><td>${esc(nameOf(s.ticker))}</td><td>${s.outcome.toUpperCase()}</td><td>${s.result.toUpperCase()}</td><td class="num mono">${s.count}</td><td class="num mono">${pct(s.p_model)}</td><td class="num mono ${cls(s.pnl)}">${fmt$(s.pnl)}</td></tr>`).join(''), 'no settlements yet');
 }
 
-let prevEq = null;
-async function fast(){   // every 5s: prices, positions, summary
-  const beat = $('#beat'); beat.style.opacity = 1;
-  try { const [s,p] = await Promise.all([get('/api/summary'), get('/api/positions')]); tiles(s); positions(p); $('#err').textContent='';
-        if(prevEq!=null && s.equity!==prevEq){ const t=$('#tiles .tile b'); t.classList.remove('fu','fd'); void t.offsetWidth; t.classList.add(s.equity>prevEq?'fu':'fd'); }
-        prevEq = s.equity; }
+/* ---------- polling ---------- */
+function blink(){ document.querySelectorAll('#toad .pupil').forEach(p=>{ p.setAttribute('r','4.2'); setTimeout(()=>p.setAttribute('r','2.6'), 450); }); }
+async function fast(){
+  try { const [s,p] = await Promise.all([get('/api/summary'), get('/api/positions')]); ledger(s); positions(p); $('#err').textContent=''; blink(); }
   catch(e){ $('#err').textContent = 'update failed: '+e.message; }
-  $('#poll').textContent = 'updated ' + new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
-  setTimeout(()=>beat.style.opacity=.3, 300);
+  $('#clock').textContent = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
 }
-async function mid(){    // every 20s: city cards (strike prices move all day)
-  try { cities(await get('/api/cities')); } catch(e){ $('#err').textContent = 'update failed: '+e.message; }
-}
-async function slow(){   // every 2 min: scorecard, activity
-  try { const [sc,a] = await Promise.all([get('/api/scorecard'), get('/api/activity')]); scorecard(sc); activity(a); }
-  catch(e){ $('#err').textContent = 'update failed: '+e.message; }
-}
-fast(); mid(); slow();
-setInterval(fast, 5000);
-setInterval(mid, 20000);
-setInterval(slow, 120000);
+async function mid(){ try { cities(await get('/api/cities')); } catch(e){ $('#err').textContent = 'update failed: '+e.message; } }
+async function slow(){ try { const [sc,a] = await Promise.all([get('/api/scorecard'), get('/api/activity')]); scorecard(sc); activity(a); } catch(e){ $('#err').textContent = 'update failed: '+e.message; } }
+(async()=>{ await fast(); await Promise.all([mid(), slow()]); })();
+setInterval(fast, 5000); setInterval(mid, 20000); setInterval(slow, 60000);
 </script>

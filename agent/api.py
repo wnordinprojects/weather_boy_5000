@@ -107,7 +107,9 @@ class Api:
             best_case=round(cash + sum(p["count"] for p in pos), 2), worst_case=round(cash, 2),
             pnl_since_start_bid=round(cash + v_bid - start, 2), pnl_since_start_mid=round(cash + v_mid - start, 2),
             settled_pnl=round(pnl["p"] or 0, 2), settled_n=pnl["n"], settled_wins=pnl["w"] or 0,
-            settled_24h=round(today or 0, 2), contracts_traded=int(fees))
+            settled_24h=round(today or 0, 2), contracts_traded=int(fees),
+            series={k: dict(city=v["city"], station=v["station"], kind="low" if k.startswith("KXLOWT") else "high")
+                    for k, v in config.SERIES.items()})
 
     def positions(self):
         rows = self._positions()
