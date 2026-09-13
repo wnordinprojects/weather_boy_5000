@@ -38,6 +38,21 @@
   #bigfrog .throat { transform-origin:center; transform-box:fill-box; animation:croak 2.4s ease-in-out infinite; }
   @keyframes croak { 0%,100% { transform:scale(1) } 50% { transform:scale(1.18) } }
   #bigfrog .lid { transform-origin:center; transform-box:fill-box; transform:scaleY(0); }
+  #lasers { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:3; overflow:visible; opacity:0; }
+  #lasers.happy, #lasers.sad { animation:laser 1.6s ease-out 1; }
+  @keyframes laser { 0% { opacity:0 } 8% { opacity:1 } 80% { opacity:1 } 100% { opacity:0 } }
+  #lasers .beam { stroke-width:6; stroke-linecap:round; stroke-dasharray:1400; stroke-dashoffset:1400; }
+  #lasers.happy .beam, #lasers.sad .beam { animation:beam 1.2s ease-out 1 forwards; }
+  @keyframes beam { to { stroke-dashoffset:0 } }
+  #lasers.happy .beam { stroke:#2fd36b; filter:drop-shadow(0 0 6px #2fd36b); }
+  #lasers.sad .beam { stroke:#6aa4ff; filter:drop-shadow(0 0 6px #6aa4ff); }
+  #lasers .spark { opacity:0; }
+  #lasers.happy .spark, #lasers.sad .spark { animation:spark 1.2s ease-out .5s 1; }
+  @keyframes spark { 0% { opacity:0; transform:scale(.2) } 40% { opacity:1; transform:scale(1.1) } 100% { opacity:0; transform:scale(1.6) } }
+  #bigfrog.happy .ring { stroke:#2fd36b !important; } #bigfrog.sad .ring { stroke:#6aa4ff !important; }
+  #bigfrog.sad .mouth { d:path("M40 62 q26 -14 52 0"); } #bigfrog.sad .lips { opacity:0; }
+  #bigfrog .tear { opacity:0; } #bigfrog.sad .tear { animation:tear 1.6s ease-in 1; }
+  @keyframes tear { 0% { opacity:0; transform:translateY(0) } 20% { opacity:1 } 100% { opacity:0; transform:translateY(22px) } }
   #bigfrog.blink .lid { animation:lid .35s ease-in-out; } @keyframes lid { 0%,100% { transform:scaleY(0) } 50% { transform:scaleY(1) } }
   .tabs { display:flex; gap:24px; font-weight:500; }
   .tabs .on { border-bottom:2px solid var(--ink); padding-bottom:4px; }
@@ -95,6 +110,8 @@
 </style>
 
 <div class="page">
+  <svg id="lasers" aria-hidden="true"><line class="beam" id="b1"/><line class="beam" id="b2"/>
+    <g class="spark" id="sp"><circle r="18" fill="none" stroke="#ffd66b" stroke-width="3"/><circle r="8" fill="#ffd66b"/></g></svg>
   <div class="sky" aria-hidden="true"><svg viewBox="0 0 1400 420" preserveAspectRatio="xMidYMin slice">
     <defs>
       <linearGradient id="hill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#cfe3c4"/><stop offset="1" stop-color="#f6f1e7"/></linearGradient>
@@ -161,8 +178,9 @@
         <circle cx="44" cy="34" r="3.2" fill="#2a2620"/><circle cx="88" cy="34" r="3.2" fill="#2a2620"/>
         <circle cx="46" cy="32" r="1.1" fill="#ffffff"/><circle cx="90" cy="32" r="1.1" fill="#ffffff"/>
         <rect class="lid" x="27" y="23" width="34" height="22" rx="11" fill="#a8c47f"/><rect class="lid" x="71" y="23" width="34" height="22" rx="11" fill="#a8c47f"/>
-        <path d="M40 58 q26 18 52 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
-        <path d="M40 58 q26 18 52 0 q-26 6 -52 0 z" fill="#c9565a" opacity=".8"/>
+        <path class="mouth" d="M40 58 q26 18 52 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
+        <path class="lips" d="M40 58 q26 18 52 0 q-26 6 -52 0 z" fill="#c9565a" opacity=".8"/>
+        <ellipse class="tear" cx="36" cy="48" rx="2.5" ry="4" fill="#6aa4ff"/><ellipse class="tear" cx="96" cy="48" rx="2.5" ry="4" fill="#6aa4ff"/>
         <circle cx="30" cy="62" r="4" fill="#e9a5a0" opacity=".7"/><circle cx="102" cy="62" r="4" fill="#e9a5a0" opacity=".7"/>
         <circle cx="58" cy="76" r="2" fill="#6f8e4c"/><circle cx="78" cy="70" r="2" fill="#6f8e4c"/><circle cx="96" cy="80" r="1.6" fill="#6f8e4c"/>
       </svg>
@@ -180,7 +198,7 @@
 
   <div class="ledger">
     <div>
-      <div class="lbl">Equity, if sold now <span id="mult" style="margin-left:8px; color:#9a9186; letter-spacing:.04em; text-transform:none;"></span></div>
+      <div class="lbl">Equity, if sold now</div>
       <div id="eq" class="serif big">$—</div>
       <div style="font-size:14px; margin-top:8px; display:flex; gap:14px; flex-wrap:wrap;">
         <span id="since" style="font-weight:600;"></span><span id="start" class="mut"></span>
@@ -254,6 +272,7 @@
       <div class="card wrap"><table id="passes"><thead><tr><th>Market</th><th>Side</th><th class="num">Model</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th></tr></thead><tbody></tbody></table></div>
     </div>
   </div>
+  <div id="mult" style="margin-top:40px; font-size:11px; color:#c2b9ab; text-align:right;"></div>
 </div>
 
 <script>
@@ -289,7 +308,7 @@ function ledger(s){
   $('#mult').textContent = MULT!==1 ? `×${MULT} display` : '';
   const eq = $('#eq'); const [d, c] = fmt$(s.equity).split('.');
   eq.innerHTML = `${d}<small>.${c}</small>`;
-  if(prevEq!=null && s.equity!==prevEq){ eq.classList.remove('fu','fd'); void eq.offsetWidth; eq.classList.add(s.equity>prevEq?'fu':'fd'); }
+  if(prevEq!=null && s.equity!==prevEq){ eq.classList.remove('fu','fd'); void eq.offsetWidth; eq.classList.add(s.equity>prevEq?'fu':'fd'); lasers(s.equity>prevEq); }
   prevEq = s.equity;
   const since = $('#since'); since.textContent = signed$(s.pnl_since_start_bid)+' since start'; since.className = cls(s.pnl_since_start_bid);
   $('#start').textContent = 'started with '+fmt$(s.start_equity);
@@ -309,6 +328,18 @@ function ledger(s){
   $('#cycle').textContent = 'cycle ' + ago(s.last_cycle_ts);
 }
 
+function lasers(up){
+  const page=$('.page').getBoundingClientRect(), frog=$('#bigfrog').getBoundingClientRect(), eq=$('#eq').getBoundingClientRect();
+  const eyes=[[frog.left+frog.width*0.33-page.left, frog.top+frog.height*0.31-page.top],[frog.left+frog.width*0.67-page.left, frog.top+frog.height*0.31-page.top]];
+  const tx=eq.left+eq.width*0.5-page.left, ty=eq.top+eq.height*0.5-page.top;
+  const svg=$('#lasers'); svg.setAttribute('viewBox',`0 0 ${page.width} ${page.height}`);
+  [['#b1',eyes[0]],['#b2',eyes[1]]].forEach(([id,e])=>{ const l=$(id); l.setAttribute('x1',e[0]); l.setAttribute('y1',e[1]); l.setAttribute('x2',tx); l.setAttribute('y2',ty); });
+  $('#sp').setAttribute('transform',`translate(${tx} ${ty})`);
+  const f=$('#bigfrog'); const mood=up?'happy':'sad';
+  svg.className.baseVal=''; f.classList.remove('happy','sad'); void svg.getBoundingClientRect();
+  svg.className.baseVal=mood; f.classList.add(mood);
+  setTimeout(()=>{ svg.className.baseVal=''; f.classList.remove(mood); }, 1700);
+}
 /* ---------- positions ---------- */
 const prevMark = {};
 function positions(p){
