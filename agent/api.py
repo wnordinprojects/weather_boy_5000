@@ -63,14 +63,14 @@ class Api:
                 except KalshiError:
                     pass
             return out
-        return cached("mk:" + ",".join(sorted(tickers)), 20, fetch)
+        return cached("mk:" + ",".join(sorted(tickers)), 4, fetch)
 
     def _event_markets(self, event_ticker):
-        return cached("ev:" + event_ticker, 30,
+        return cached("ev:" + event_ticker, 15,
                       lambda: self.k.markets(event_ticker=event_ticker, status="open"))
 
     def _positions(self):
-        return cached("pos", 20, lambda: self.k.positions())
+        return cached("pos", 4, lambda: self.k.positions())
 
     def _last_decisions(self):
         return {r["ticker"]: r for r in self.db.rows(

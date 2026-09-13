@@ -37,6 +37,10 @@
   @media (max-width:900px){ .two{grid-template-columns:1fr} .grid{grid-template-columns:1fr} }
   .bar { height:6px; background:#2a2f3a; border-radius:3px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--acc); }
   #err { color:var(--dn); font-size:12px; }
+  @keyframes flashUp { from { background:#173a2a } to { background:transparent } }
+  @keyframes flashDn { from { background:#3a1717 } to { background:transparent } }
+  .fu { animation: flashUp 1.2s ease-out; } .fd { animation: flashDn 1.2s ease-out; }
+  #beat { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--up); margin-right:6px; opacity:.3; transition:opacity .2s; }
 </style>
 <header>
   <h1>Weather Boy 5000</h1>
@@ -44,7 +48,7 @@
   <span class="mut" id="cycle">last cycle: …</span>
   <span class="sp"></span>
   <span id="err"></span>
-  <span class="mut" id="poll">polling</span>
+  <span class="mut"><i id="beat"></i><span id="poll">polling</span></span>
 </header>
 <main>
   <div class="tiles" id="tiles"></div>
@@ -112,13 +116,16 @@ function tiles(s){
   $('#cycle').textContent = 'last cycle: ' + ago(s.last_cycle_ts) + ' · every ' + Math.round(s.cycle_seconds/60) + ' min';
 }
 
+const prevMark = {};
 function positions(p){
   $('#poscount').textContent = p.positions.length ? `(${p.positions.length})` : '';
-  rows('#positions', p.positions.map(x=>`<tr>
+  rows('#positions', p.positions.map(x=>{
+    const was = prevMark[x.ticker]; const fl = was==null||was===x.mark ? '' : (x.mark>was ? 'fu' : 'fd'); prevMark[x.ticker] = x.mark;
+    return `<tr>
     <td title="${esc(x.ticker)}">${esc(x.title)}</td><td>${x.outcome.toUpperCase()}</td>
-    <td class="num">${x.count}</td><td class="num">${cents(x.cost_each)}</td><td class="num">${cents(x.mark)}</td>
-    <td class="num">${pct(x.p_model)}</td><td class="num">${fmt$(x.value)}</td>
-    <td class="num ${cls(x.unrealized)}">${fmt$(x.unrealized)}</td></tr>`).join(''));
+    <td class="num">${x.count}</td><td class="num">${cents(x.cost_each)}</td><td class="num ${fl}">${cents(x.mark)}</td>
+    <td class="num">${pct(x.p_model)}</td><td class="num ${fl}">${fmt$(x.value)}</td>
+    <td class="num ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td></tr>`; }).join(''));
 }
 
 function cityChart(c){
@@ -205,17 +212,25 @@ function activity(a){
   rows('#settled', a.settlements.map(s=>`<tr><td>${when(s.ts)}</td><td>${s.ticker}</td><td>${s.outcome.toUpperCase()}</td><td>${s.result.toUpperCase()}</td><td class="num">${s.count}</td><td class="num">${pct(s.p_model)}</td><td class="num ${cls(s.pnl)}">${fmt$(s.pnl)}</td></tr>`).join(''));
 }
 
-let n=0;
-async function fast(){   // every 30s: prices, positions, summary
-  try { const [s,p] = await Promise.all([get('/api/summary'), get('/api/positions')]); tiles(s); positions(p); $('#err').textContent=''; }
+let prevEq = null;
+async function fast(){   // every 5s: prices, positions, summary
+  const beat = $('#beat'); beat.style.opacity = 1;
+  try { const [s,p] = await Promise.all([get('/api/summary'), get('/api/positions')]); tiles(s); positions(p); $('#err').textContent='';
+        if(prevEq!=null && s.equity!==prevEq){ const t=$('#tiles .tile b'); t.classList.remove('fu','fd'); void t.offsetWidth; t.classList.add(s.equity>prevEq?'fu':'fd'); }
+        prevEq = s.equity; }
   catch(e){ $('#err').textContent = 'update failed: '+e.message; }
   $('#poll').textContent = 'updated ' + new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
+  setTimeout(()=>beat.style.opacity=.3, 300);
 }
-async function slow(){   // every 2 min: charts, scorecard, activity
-  try { const [c,sc,a] = await Promise.all([get('/api/cities'), get('/api/scorecard'), get('/api/activity')]); cities(c); scorecard(sc); activity(a); }
+async function mid(){    // every 20s: city cards (strike prices move all day)
+  try { cities(await get('/api/cities')); } catch(e){ $('#err').textContent = 'update failed: '+e.message; }
+}
+async function slow(){   // every 2 min: scorecard, activity
+  try { const [sc,a] = await Promise.all([get('/api/scorecard'), get('/api/activity')]); scorecard(sc); activity(a); }
   catch(e){ $('#err').textContent = 'update failed: '+e.message; }
 }
-fast(); slow();
-setInterval(fast, 30000);
+fast(); mid(); slow();
+setInterval(fast, 5000);
+setInterval(mid, 20000);
 setInterval(slow, 120000);
 </script>
