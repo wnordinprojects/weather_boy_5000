@@ -1,5 +1,6 @@
 """Minimal Kalshi Trade API v2 client (RSA-PSS signed requests, V2 single-book orders)."""
 import base64
+import re
 import logging
 import time
 import uuid
@@ -13,9 +14,24 @@ from . import config
 log = logging.getLogger("kalshi")
 
 
+def normalize_pem(text: str) -> bytes:
+    """Rebuild a PEM whose newlines were flattened by an env-var editor.
+
+    Accepts literal '\\n', CRLF, spaces instead of newlines, or surrounding quotes.
+    """
+    t = text.strip().strip('"').strip("'").replace("\\n", "\n").replace("\r", "")
+    m = re.search(r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", t, re.S)
+    if not m:
+        raise RuntimeError("KALSHI_PRIVATE_KEY does not contain a BEGIN/END PEM block")
+    label = m.group(1)
+    body = re.sub(r"\s+", "", m.group(2))
+    lines = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+    return f"-----BEGIN {label}-----\n{lines}\n-----END {label}-----\n".encode()
+
+
 def load_private_key(pem_text: str = "", path: str = ""):
     if pem_text:
-        data = pem_text.replace("\\n", "\n").encode()
+        data = normalize_pem(pem_text)
     elif path:
         with open(path, "rb") as f:
             data = f.read()
