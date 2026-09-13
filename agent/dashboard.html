@@ -19,12 +19,6 @@
   .rays { transform-origin:center; animation:spin 90s linear infinite; } @keyframes spin { to { transform:rotate(360deg) } }
   .flake { animation:fall 5s linear infinite; } @keyframes fall { from { transform:translateY(-6px) } to { transform:translateY(30px) } }
   header, .ledger { z-index:1; }
-  .chrome { font-family:"Anton", Impact, "Arial Narrow", sans-serif; font-weight:400; font-size:44px; letter-spacing:.06em; line-height:1; text-transform:uppercase;
-            background:linear-gradient(180deg,#f4f6f8 0%,#d6dbe1 30%,#8b949e 50%,#e9edf1 55%,#5c646d 80%,#c9d0d6 100%); -webkit-background-clip:text; background-clip:text; color:transparent;
-            -webkit-text-stroke:1.2px #2a2620; paint-order:stroke fill; filter:drop-shadow(0 2px 0 rgba(20,25,30,.35)); position:relative; }
-  .chrome .eye { display:inline-block; width:.42em; height:.42em; border-radius:50%; background:radial-gradient(circle at 40% 40%,#ffb3a6,#e3170a 55%,#7a0a04); box-shadow:0 0 8px 2px rgba(227,23,10,.75); vertical-align:-.02em; margin:0 .02em; animation:eye 2.6s ease-in-out infinite; }
-  @keyframes eye { 0%,100% { box-shadow:0 0 6px 1px rgba(227,23,10,.6) } 50% { box-shadow:0 0 14px 4px rgba(227,23,10,.95) } }
-  .led { font-family:"IBM Plex Mono", monospace; font-weight:500; font-size:30px; color:#e3170a; text-shadow:0 0 6px rgba(227,23,10,.7), 0 0 14px rgba(227,23,10,.35); letter-spacing:.08em; margin-left:12px; vertical-align:.12em; }
   .serif { font-family:"Newsreader", Georgia, "Times New Roman", serif; }
   .mono { font-family:"IBM Plex Mono", Menlo, Consolas, monospace; font-variant-numeric:tabular-nums; }
   .lbl { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mut); }
@@ -32,8 +26,19 @@
   .up { color:var(--up); } .dn { color:var(--dn); }
   .page { max-width:1400px; margin:0 auto; padding:24px 40px 56px; position:relative; overflow:hidden; }
   .sun { position:absolute; right:-160px; top:-200px; width:560px; height:560px; border-radius:50%; background:radial-gradient(circle,#ffd58a 0%,rgba(255,213,138,0) 68%); pointer-events:none; }
-  header { display:flex; align-items:baseline; gap:32px; position:relative; flex-wrap:wrap; }
-  header h1 { margin:0; display:flex; align-items:baseline; }
+  header { display:flex; align-items:center; gap:32px; position:relative; flex-wrap:wrap; }
+  header h1 { margin:0; display:flex; align-items:center; gap:16px; }
+  header h1 .word { font-family:"Newsreader", Georgia, serif; font-size:34px; font-weight:500; letter-spacing:-.01em; line-height:1.05; }
+  header h1 .word span { color:var(--dn); }
+  header h1 .tag { display:block; font-family:"IBM Plex Sans", sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin-top:4px; }
+  #bigfrog { width:158px; height:132px; display:block; }
+  #bigfrog .ring { transform-origin:center; transform-box:fill-box; animation:hypno 3.2s ease-in-out infinite; }
+  #bigfrog .ring2 { animation-delay:-1.6s; }
+  @keyframes hypno { 0%,100% { transform:scale(.55); opacity:.15 } 50% { transform:scale(1); opacity:.9 } }
+  #bigfrog .throat { transform-origin:center; transform-box:fill-box; animation:croak 2.4s ease-in-out infinite; }
+  @keyframes croak { 0%,100% { transform:scale(1) } 50% { transform:scale(1.18) } }
+  #bigfrog .lid { transform-origin:center; transform-box:fill-box; transform:scaleY(0); }
+  #bigfrog.blink .lid { animation:lid .35s ease-in-out; } @keyframes lid { 0%,100% { transform:scaleY(0) } 50% { transform:scaleY(1) } }
   .tabs { display:flex; gap:24px; font-weight:500; }
   .tabs .on { border-bottom:2px solid var(--ink); padding-bottom:4px; }
   .tabs .off { color:var(--faint); }
@@ -137,20 +142,35 @@
     <path d="M0 392 q260 -40 520 -10 t480 0 t400 10 v40 h-1400 z" fill="#e6efdb" opacity=".8"/>
   </svg></div>
   <header>
-    <h1><span class="chrome">Weather B<span class="eye"></span>y</span><span class="led">5000</span></h1>
+    <h1>
+      <svg id="bigfrog" viewBox="0 0 132 110" aria-label="Weather Boy 5000">
+        <ellipse cx="66" cy="94" rx="52" ry="12" fill="#6f8e4c" opacity=".35"/>
+        <path d="M18 92 q-14 -4 -8 -14 q8 -8 22 -2" fill="#8fae6b" stroke="#2a2620" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M114 92 q14 -4 8 -14 q-8 -8 -22 -2" fill="#8fae6b" stroke="#2a2620" stroke-width="2.5" stroke-linejoin="round"/>
+        <ellipse cx="66" cy="72" rx="46" ry="26" fill="#a8c47f" stroke="#2a2620" stroke-width="2.5"/>
+        <ellipse class="throat" cx="66" cy="84" rx="22" ry="10" fill="#e9f0c9" stroke="#2a2620" stroke-width="2"/>
+        <ellipse cx="66" cy="50" rx="40" ry="24" fill="#a8c47f" stroke="#2a2620" stroke-width="2.5"/>
+        <circle cx="44" cy="34" r="17" fill="#a8c47f" stroke="#2a2620" stroke-width="2.5"/>
+        <circle cx="88" cy="34" r="17" fill="#a8c47f" stroke="#2a2620" stroke-width="2.5"/>
+        <circle cx="44" cy="34" r="11" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/>
+        <circle cx="88" cy="34" r="11" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/>
+        <circle class="ring" cx="44" cy="34" r="9" fill="none" stroke="#b4541e" stroke-width="2"/>
+        <circle class="ring ring2" cx="44" cy="34" r="9" fill="none" stroke="#e08a3c" stroke-width="2"/>
+        <circle class="ring" cx="88" cy="34" r="9" fill="none" stroke="#b4541e" stroke-width="2"/>
+        <circle class="ring ring2" cx="88" cy="34" r="9" fill="none" stroke="#e08a3c" stroke-width="2"/>
+        <circle cx="44" cy="34" r="3.2" fill="#2a2620"/><circle cx="88" cy="34" r="3.2" fill="#2a2620"/>
+        <circle cx="46" cy="32" r="1.1" fill="#ffffff"/><circle cx="90" cy="32" r="1.1" fill="#ffffff"/>
+        <rect class="lid" x="27" y="23" width="34" height="22" rx="11" fill="#a8c47f"/><rect class="lid" x="71" y="23" width="34" height="22" rx="11" fill="#a8c47f"/>
+        <path d="M40 58 q26 18 52 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M40 58 q26 18 52 0 q-26 6 -52 0 z" fill="#c9565a" opacity=".8"/>
+        <circle cx="30" cy="62" r="4" fill="#e9a5a0" opacity=".7"/><circle cx="102" cy="62" r="4" fill="#e9a5a0" opacity=".7"/>
+        <circle cx="58" cy="76" r="2" fill="#6f8e4c"/><circle cx="78" cy="70" r="2" fill="#6f8e4c"/><circle cx="96" cy="80" r="1.6" fill="#6f8e4c"/>
+      </svg>
+      <span class="word">Weather Boy <span>5000</span><span class="tag">Kalshi weather desk</span></span>
+    </h1>
     <div class="tabs"><span class="on">Weather</span><span class="off">Sports</span><span class="off">Mentions</span></div>
     <div class="sp"></div>
     <div class="status">
-      <svg id="toad" viewBox="0 0 120 70" width="96" height="56" aria-label="lucky toad">
-        <ellipse cx="60" cy="52" rx="44" ry="16" fill="#8fae6b" stroke="#2a2620" stroke-width="2"/>
-        <ellipse cx="60" cy="40" rx="30" ry="18" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
-        <circle cx="44" cy="26" r="11" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="76" cy="26" r="11" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
-        <circle cx="44" cy="26" r="6" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/><circle cx="76" cy="26" r="6" fill="#f6f1e7" stroke="#2a2620" stroke-width="2"/>
-        <circle class="pupil" cx="45" cy="27" r="2.6" fill="#2a2620"/><circle class="pupil" cx="77" cy="27" r="2.6" fill="#2a2620"/>
-        <path d="M46 46 Q60 54 74 46" fill="none" stroke="#2a2620" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="30" cy="44" r="2" fill="#6f8e4c"/><circle cx="88" cy="42" r="2" fill="#6f8e4c"/><circle cx="64" cy="34" r="1.6" fill="#6f8e4c"/>
-        <path d="M22 58 q-8 6 -4 10 M98 58 q8 6 4 10" fill="none" stroke="#2a2620" stroke-width="2" stroke-linecap="round"/>
-      </svg>
       <span id="mode" class="live"><i></i>…</span>
       <span id="cycle">cycle …</span>
       <span id="clock" class="mono"></span>
@@ -383,7 +403,7 @@ function activity(a){
 }
 
 /* ---------- polling ---------- */
-function blink(){ document.querySelectorAll('#toad .pupil').forEach(p=>{ p.setAttribute('r','4.2'); setTimeout(()=>p.setAttribute('r','2.6'), 450); }); }
+function blink(){ const f=$('#bigfrog'); f.classList.remove('blink'); void f.getBoundingClientRect(); f.classList.add('blink'); }
 async function fast(){
   try { const [s,p] = await Promise.all([get('/api/summary'), get('/api/positions')]); ledger(s); positions(p); $('#err').textContent=''; blink(); }
   catch(e){ $('#err').textContent = 'update failed: '+e.message; }
