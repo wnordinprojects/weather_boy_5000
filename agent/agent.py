@@ -13,7 +13,7 @@ import requests
 from . import config
 from .db import DB
 from .kalshi import Kalshi, KalshiError
-from .strategy import plan_orders, available_at
+from .strategy import plan_orders, available_at, fee
 from .weather import build_forecast, fetch_observations, observed_extreme
 
 log = logging.getLogger("agent")
@@ -166,6 +166,10 @@ class Agent:
                           outcome=o["outcome"], count=o["count"], yes_price=o["yes_price"],
                           p_model=o["p_model"], edge=o["edge"], order_id="ERR", fill_count=0,
                           avg_fill=None, raw=str(e)[:500])
+            msg = str(e).lower()
+            if "balance" in msg or "insufficient" in msg or "funds" in msg:
+                self.db.skip(ticker=o["ticker"], outcome=o["outcome"], reason="insufficient balance")
+                return 0                      # out of cash is not a bug; keep going
             raise
         fill = float(r.get("fill_count") or 0)
         avg = r.get("average_fill_price")
@@ -203,7 +207,7 @@ class Agent:
                 # avg_fill is on the YES scale; cost of a NO contract is 1 - price.
                 c = px if h["outcome"] == "yes" else 1 - px
                 win = 1.0 if h["outcome"] == result else 0.0
-                pnl += n * (win - c)
+                pnl += n * (win - c - fee(c))
                 count += n
                 cost += n * c
             self.db.settlement(ticker=ticker, event_ticker=hist[0]["event_ticker"], series=series,
@@ -211,7 +215,10 @@ class Agent:
                                avg_fill=cost / count if count else None, p_model=hist[-1]["p_model"],
                                edge=hist[-1]["edge"], pnl=round(pnl, 2))
             log.info("settled %s -> %s pnl %.2f", ticker, result, pnl)
-        self.adapt()
+        n_settled = self.db.rows("SELECT COUNT(*) n FROM settlements")[0]["n"]
+        if n_settled != self.db.get_state("adapt_seen", 0):
+            self.adapt()                       # only when there is new evidence
+            self.db.set_state("adapt_seen", n_settled)
         self.calibrate()
 
     def adapt(self):

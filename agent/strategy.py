@@ -129,7 +129,7 @@ class Candidate:
 def evaluate(fc: Forecast, m, threshold) -> Candidate | None:
     """Best side to buy on this market, or None."""
     yb, ya, nb, na, vol, spread = prices(m)
-    p = p_yes(fc, m)
+    p = min(config.MODEL_P_CAP, max(1 - config.MODEL_P_CAP, p_yes(fc, m)))
     sat = is_saturated(spread, vol)
     thr = threshold + (config.SATURATION_PENALTY if sat else 0.0)
     # Extreme prices are where the market has settlement information we lack (and fee
@@ -192,15 +192,22 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
         if action in ("buy", "exit") and count > 0:
             cands.append((c, count, action))
 
-    # Highest edge first, spend the event budget in order.
+    # Highest edge first, spend the event budget in order. Exits always go through;
+    # new buys are limited to the best few strikes since they express the same view.
     cands.sort(key=lambda t: -t[0].edge)
+    buys = 0
     for c, count, action in cands:
         if action == "buy":
+            already = positions.get(c.m["ticker"], 0) != 0
+            if not already and buys >= config.MAX_MARKETS_PER_EVENT:
+                continue
             affordable = int(budget // c.price) if c.price > 0 else 0
             count = min(count, affordable)
             if count <= 0:
                 continue
             budget -= count * c.price
+            if not already:
+                buys += 1
         orders.append(dict(ticker=c.m["ticker"], event_ticker=c.m.get("event_ticker"),
                            outcome=c.outcome, count=count, yes_price=c.yes_price,
                            p_model=c.p, edge=c.edge, action=action))

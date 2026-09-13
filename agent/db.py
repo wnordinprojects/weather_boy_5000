@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import threading
 import time
 
 from . import config
@@ -43,6 +44,7 @@ class DB:
         d = os.path.dirname(path)
         if d:
             os.makedirs(d, exist_ok=True)
+        self.lock = threading.RLock()
         self.c = sqlite3.connect(path, check_same_thread=False)
         self.c.row_factory = sqlite3.Row
         self.c.executescript(SCHEMA)
@@ -56,13 +58,15 @@ class DB:
     def _ins(self, table, **kw):
         cols = ",".join(kw)
         q = ",".join("?" * len(kw))
-        cur = self.c.execute(f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({q})", list(kw.values()))
-        self.c.commit()
-        return cur.lastrowid
+        with self.lock:
+            cur = self.c.execute(f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({q})", list(kw.values()))
+            self.c.commit()
+            return cur.lastrowid
 
     # state -----------------------------------------------------------------
     def get_state(self, key, default=None):
-        r = self.c.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+        with self.lock:
+            r = self.c.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
         return json.loads(r["value"]) if r else default
 
     def set_state(self, key, value):
@@ -109,4 +113,5 @@ class DB:
         return [dict(r) for r in self.c.execute(q, args)]
 
     def rows(self, q, args=()):
-        return [dict(r) for r in self.c.execute(q, args)]
+        with self.lock:
+            return [dict(r) for r in self.c.execute(q, args)]

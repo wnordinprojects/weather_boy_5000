@@ -37,8 +37,12 @@ EDGE_MIN, EDGE_MAX = 0.04, 0.16
 SATURATION_PENALTY = _env("SATURATION_PENALTY", 0.03, float)
 # Kelly fraction. 0.5 = half Kelly. Full Kelly on correlated weather bets blows up.
 KELLY_FRACTION = _env("KELLY_FRACTION", 0.5, float)
-# Cap per event (all strikes on one city-day are correlated). Fraction of bankroll.
-MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.5, float)
+# Cap per event (all strikes on one city-day are the same bet). Fraction of bankroll.
+MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.25, float)
+# Strikes on one city-day are near-perfectly correlated for a nowcast: take at most this many.
+MAX_MARKETS_PER_EVENT = _env("MAX_MARKETS_PER_EVENT", 2, int)
+# Never let the model claim certainty. Settlement source (TWC) can differ from NWS obs by a degree.
+MODEL_P_CAP = _env("MODEL_P_CAP", 0.97, float)
 # How many days ahead to trade. 0 = same-day only (live observations are the edge).
 # Raise to 1-2 once per-station calibration has a week of data.
 DAYS_AHEAD = _env("DAYS_AHEAD", 0, int)

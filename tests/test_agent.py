@@ -64,22 +64,30 @@ def test_kelly_and_fee():
 
 
 def test_plan_orders_buys_best_side_and_respects_event_budget():
-    fc = _fc([90] * 9 + [80])  # 90% sure it's 90
+    fc = _fc([96] * 2 + [90] * 5 + [80] * 3)  # P(>85)=0.7, P(>95)=0.2
     ms = [dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
                yes_bid_dollars="0.50", yes_ask_dollars="0.55", no_bid_dollars="0.45", no_ask_dollars="0.50", volume_24h_fp="10"),
           dict(ticker="E-T95", event_ticker="E", strike_type="greater", floor_strike=94.5,
                yes_bid_dollars="0.30", yes_ask_dollars="0.35", no_bid_dollars="0.65", no_ask_dollars="0.70", volume_24h_fp="10")]
-    orders, decisions = strategy.plan_orders(fc, ms, bankroll=100, positions={}, threshold=0.06, event_spent=0)
-    assert [o["outcome"] for o in orders] == ["yes", "no"]
-    assert orders[0]["yes_price"] == 0.55                      # buy yes at ask
-    assert orders[1]["yes_price"] == pytest.approx(0.30)       # buy no = ask on yes scale at 1 - no_ask
+    orders, decisions = strategy.plan_orders(fc, ms, bankroll=1000, positions={}, threshold=0.06, event_spent=0)
+    by = {o["ticker"]: o for o in orders}
+    assert by["E-T85"]["outcome"] == "yes" and by["E-T85"]["yes_price"] == 0.55          # buy yes at ask
+    assert by["E-T95"]["outcome"] == "no" and by["E-T95"]["yes_price"] == pytest.approx(0.30)  # buy no at 1 - no_ask
     spent = sum(o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"]) for o in orders)
-    assert spent <= config.MAX_EVENT_FRACTION * 100 + 1e-9
+    assert spent <= config.MAX_EVENT_FRACTION * 1000 + 1e-9
+    # small bankroll: the best strike eats the whole event budget, second gets nothing
+    orders_small, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms, bankroll=100, positions={}, threshold=0.06, event_spent=0)
+    assert len(orders_small) == 1 and orders_small[0]["count"] * orders_small[0]["yes_price"] <= 25 + 1e-9
+    # never more than MAX_MARKETS_PER_EVENT new strikes per event
+    ms3 = ms + [dict(ticker="E-T88", event_ticker="E", strike_type="greater", floor_strike=88.5,
+                     yes_bid_dollars="0.50", yes_ask_dollars="0.56", no_bid_dollars="0.44", no_ask_dollars="0.50", volume_24h_fp="10")]
+    orders3, _ = strategy.plan_orders(fc, ms3, bankroll=10000, positions={}, threshold=0.06, event_spent=0)
+    assert len(orders3) == config.MAX_MARKETS_PER_EVENT
     # already at size -> no order
     orders2, _ = strategy.plan_orders(fc, ms[:1], 100, {"E-T85": 500}, 0.06, 0)
     assert orders2 == []
     # holding the wrong side with a big reversed edge -> exit
-    orders3, _ = strategy.plan_orders(fc, ms[:1], 100, {"E-T85": -10}, 0.06, 0)
+    orders3, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms[:1], 100, {"E-T85": -10}, 0.06, 0)
     assert orders3 and orders3[0]["action"] == "exit" and orders3[0]["outcome"] == "yes" and orders3[0]["count"] == 10
 
 
@@ -243,7 +251,7 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     with mock.patch.object(A.Agent, "calibrate", lambda self: None):
         ag.reconcile()
     s = db.rows("SELECT * FROM settlements")[0]
-    assert s["pnl"] == pytest.approx(5 * (1 - 0.45), abs=0.01)
+    assert s["pnl"] == pytest.approx(5 * (1 - 0.45 - 0.02), abs=0.01)   # net of taker fee
 
 
 class _FixedDT(datetime):
