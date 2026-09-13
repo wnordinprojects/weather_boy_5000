@@ -36,6 +36,8 @@ class Forecast:
     locked: bool                   # day's extreme is effectively in the books
     local_now: datetime
     notes: list = field(default_factory=list)
+    hourly_fan: list = field(default_factory=list)   # [[p10,p50,p90] x 24] deg F, ensemble
+    obs_trace: list = field(default_factory=list)    # [[iso_ts, temp_f], ...] today's observations
 
     @property
     def median(self):
@@ -175,6 +177,8 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
     sign = 1 if kind == "high" else -1
     station_sd = config.STATION_ERROR_F
 
+    fan = np.nanpercentile(hourly, [10, 50, 90], axis=0).T.round(1).tolist() if hourly.shape[1] else []
+    obs_trace = []
     obs_ext, n_obs = None, 0
     locked = False
     if target <= local_now.date():
@@ -182,6 +186,8 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
         try:
             obs = fetch_observations(meta["station"], start_utc - timedelta(hours=1), session=session)
             obs_ext, n_obs = observed_extreme(obs, target, meta["tz"], kind)
+            obs_trace = [[ts.astimezone(z).isoformat(), round(v, 1)] for ts, v in obs
+                         if ts.astimezone(z).date() == target]
         except Exception as e:  # observations are an enhancement, never a blocker
             notes.append(f"obs unavailable: {e}")
         if obs_ext is not None:
@@ -209,4 +215,4 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
 
     # Settlement is a whole-degree value; round samples so strike math is exact.
     samples = np.round(samples)
-    return Forecast(series, target, kind, samples, obs_ext, n_obs, locked, local_now, notes)
+    return Forecast(series, target, kind, samples, obs_ext, n_obs, locked, local_now, notes, fan, obs_trace)

@@ -28,7 +28,13 @@ CREATE TABLE IF NOT EXISTS calibration (
   series TEXT PRIMARY KEY, bias_f REAL, n INT, updated REAL);
 CREATE TABLE IF NOT EXISTS bench (series TEXT PRIMARY KEY, until REAL, reason TEXT);
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS skips (id INTEGER PRIMARY KEY, ts REAL, ticker TEXT, outcome TEXT, reason TEXT);
 """
+MIGRATIONS = [
+    "ALTER TABLE forecasts ADD COLUMN fan_json TEXT",
+    "ALTER TABLE forecasts ADD COLUMN obs_json TEXT",
+    "ALTER TABLE forecasts ADD COLUMN pct_json TEXT",
+]
 
 
 class DB:
@@ -40,6 +46,12 @@ class DB:
         self.c = sqlite3.connect(path, check_same_thread=False)
         self.c.row_factory = sqlite3.Row
         self.c.executescript(SCHEMA)
+        for m in MIGRATIONS:
+            try:
+                self.c.execute(m)
+            except sqlite3.OperationalError:
+                pass  # column exists
+        self.c.commit()
 
     def _ins(self, table, **kw):
         cols = ",".join(kw)
@@ -62,6 +74,7 @@ class DB:
     def decision(self, **kw):    return self._ins("decisions", ts=time.time(), **kw)
     def order(self, **kw):       return self._ins("orders", ts=time.time(), **kw)
     def settlement(self, **kw):  return self._ins("settlements", ts=time.time(), **kw)
+    def skip(self, **kw):        return self._ins("skips", ts=time.time(), **kw)
 
     def bias(self, series):
         r = self.c.execute("SELECT bias_f FROM calibration WHERE series=?", (series,)).fetchone()

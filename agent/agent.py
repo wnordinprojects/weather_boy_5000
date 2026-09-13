@@ -1,4 +1,5 @@
 """Main loop: discover weather events, forecast, trade, reconcile, adapt."""
+import json
 import logging
 import re
 import threading
@@ -94,9 +95,12 @@ class Agent:
                     try:
                         fc_cache[key] = build_forecast(series, tgt, kind, self.db.bias(series), self.http)
                         fc = fc_cache[key]
+                        pct = np.percentile(fc.samples, [5, 25, 50, 75, 95]).round(1).tolist()
                         self.db.forecast(series=series, target_date=tgt.isoformat(), kind=kind,
                                          median=fc.median, spread=fc.spread, observed=fc.observed_extreme,
-                                         locked=int(fc.locked), notes="; ".join(fc.notes))
+                                         locked=int(fc.locked), notes="; ".join(fc.notes),
+                                         fan_json=json.dumps(fc.hourly_fan), obs_json=json.dumps(fc.obs_trace),
+                                         pct_json=json.dumps(pct))
                         log.info("%s %s %s: median %.1f spread %.1f %s", series, tgt, kind,
                                  fc.median, fc.spread, fc.notes)
                     except Exception as e:
@@ -113,6 +117,7 @@ class Agent:
                     # Wrong thermometer = guaranteed losses. Refuse to trade this event.
                     log.warning("station mismatch for %s: rules say CLI%s, config has %s; skipping",
                                 ev["event_ticker"], cli.group(1), meta["station"])
+                    self.db.skip(ticker=ev["event_ticker"], outcome="", reason=f"station mismatch CLI{cli.group(1)} vs {meta['station']}")
                     continue
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
                                                 event_spent.get(ev["event_ticker"], 0.0))
@@ -140,6 +145,7 @@ class Agent:
             avail = 0
         if avail <= 0:
             log.info("skip %s %s: no liquidity at %.2f", o["outcome"], o["ticker"], o["yes_price"])
+            self.db.skip(ticker=o["ticker"], outcome=o["outcome"], reason=f"no liquidity at {o['yes_price']:.2f}")
             return 0
         if avail < o["count"]:
             log.info("cap %s %s: %d -> %d (book depth)", o["outcome"], o["ticker"], o["count"], avail)
