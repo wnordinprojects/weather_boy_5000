@@ -121,23 +121,32 @@ def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, l
     return np.minimum(obs_ext, fut_ext), future.shape[1]
 
 
-def fetch_observations(station, start_utc: datetime, session=None):
+def fetch_observations(station, start_utc: datetime, session=None, max_pages=6):
+    """All observations since start_utc. Busy ASOS stations report every minute, so one
+    page (max 500) covers only a few hours; follow pagination until the window is exhausted."""
     s = session or requests
-    r = s.get(NWS_OBS_URL.format(station=station),
-              params=dict(start=start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), limit=200),
-              timeout=30, headers=UA)
-    r.raise_for_status()
+    url = NWS_OBS_URL.format(station=station)
+    params = dict(start=start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), limit=500)
     out = []
-    for f in r.json().get("features", []):
-        p = f.get("properties", {})
-        t = p.get("temperature", {}) or {}
-        v = t.get("value")
-        if v is None:
-            continue
-        ts = datetime.fromisoformat(p["timestamp"].replace("Z", "+00:00"))
-        f_val = v * 9 / 5 + 32 if (t.get("unitCode", "").endswith("degC")) else v
-        out.append((ts, float(f_val)))
-    return sorted(out)
+    for _ in range(max_pages):
+        r = s.get(url, params=params, timeout=30, headers=UA)
+        r.raise_for_status()
+        j = r.json()
+        feats = j.get("features", [])
+        for f in feats:
+            p = f.get("properties", {})
+            t = p.get("temperature", {}) or {}
+            v = t.get("value")
+            if v is None:
+                continue
+            ts = datetime.fromisoformat(p["timestamp"].replace("Z", "+00:00"))
+            f_val = v * 9 / 5 + 32 if (t.get("unitCode", "").endswith("degC")) else v
+            out.append((ts, float(f_val)))
+        nxt = (j.get("pagination") or {}).get("next")
+        if not nxt or len(feats) < 500:
+            break
+        url, params = nxt, None
+    return sorted(set(out))
 
 
 def observed_extreme(obs, target: date, tz, kind):
