@@ -62,7 +62,11 @@ def serve(agent):
             pass
 
         def do_GET(self):
-            if self.path.startswith("/status.json"):
+            if self.path.startswith("/logs"):
+                from .agent import RING
+                body = "\n".join(RING.lines).encode()
+                ct = "text/plain; charset=utf-8"
+            elif self.path.startswith("/status.json"):
                 body = json.dumps(dict(agent.last_status, threshold=agent.threshold, halted=agent.halted)).encode()
                 ct = "application/json"
             else:

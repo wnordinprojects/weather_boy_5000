@@ -69,7 +69,7 @@ STATIONS = {
     "KXHIGHNY":   dict(city="New York",     station="KNYC", lat=40.779, lon=-73.969, tz="America/New_York"),
     "KXHIGHCHI":  dict(city="Chicago",      station="KMDW", lat=41.786, lon=-87.752, tz="America/Chicago"),
     "KXHIGHMIA":  dict(city="Miami",        station="KMIA", lat=25.795, lon=-80.290, tz="America/New_York"),
-    "KXHIGHAUS":  dict(city="Austin",       station="KATT", lat=30.321, lon=-97.760, tz="America/Chicago"),
+    "KXHIGHAUS":  dict(city="Austin",       station="KAUS", lat=30.194, lon=-97.670, tz="America/Chicago"),  # CLIAUS = Bergstrom, not Camp Mabry
     "KXHIGHLAX":  dict(city="Los Angeles",  station="KLAX", lat=33.938, lon=-118.389, tz="America/Los_Angeles"),
     "KXHIGHDEN":  dict(city="Denver",       station="KDEN", lat=39.847, lon=-104.656, tz="America/Denver"),
     "KXHIGHPHIL": dict(city="Philadelphia", station="KPHL", lat=39.873, lon=-75.241, tz="America/New_York"),

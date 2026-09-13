@@ -108,8 +108,12 @@ class Agent:
                     markets = self.k.markets(event_ticker=ev["event_ticker"])
                 n_markets += len(markets)
                 rules = (markets[0].get("rules_primary") or "") if markets else ""
-                if rules and meta["station"] not in rules and meta["city"].split()[0] not in rules:
-                    log.warning("rules for %s do not mention %s: %s", ev["event_ticker"], meta["station"], rules[:200])
+                cli = re.search(r"\(CLI([A-Z0-9]{3,4})\)", rules)
+                if cli and "K" + cli.group(1) != meta["station"]:
+                    # Wrong thermometer = guaranteed losses. Refuse to trade this event.
+                    log.warning("station mismatch for %s: rules say CLI%s, config has %s; skipping",
+                                ev["event_ticker"], cli.group(1), meta["station"])
+                    continue
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
                                                 event_spent.get(ev["event_ticker"], 0.0))
                 for d in decisions:
@@ -265,8 +269,24 @@ class Agent:
             time.sleep(config.CYCLE_SECONDS)
 
 
+class RingLog(logging.Handler):
+    """Keep the last N log lines in memory for the /logs endpoint."""
+    def __init__(self, n=400):
+        super().__init__()
+        from collections import deque
+        self.lines = deque(maxlen=n)
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+
+RING = RingLog()
+
+
 def main():
     logging.basicConfig(level=config.LOG_LEVEL, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    RING.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(RING)
     agent = Agent()
     from .dashboard import serve
     threading.Thread(target=serve, args=(agent,), daemon=True).start()

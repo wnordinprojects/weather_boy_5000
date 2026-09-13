@@ -167,6 +167,26 @@ def test_ensemble_daily_max_and_build_forecast_with_obs():
     assert fc3.locked
 
 
+def test_station_mismatch_skips_event(monkeypatch):
+    from agent import agent as A
+    k = mock.Mock()
+    k.exchange_status.return_value = {"trading_active": True}
+    k.balance.return_value = 100.0
+    k.positions.return_value = []
+    ev = {"event_ticker": "KXHIGHAUS-26SEP13", "markets": [
+        dict(ticker="KXHIGHAUS-26SEP13-T99", event_ticker="KXHIGHAUS-26SEP13", status="open", strike_type="greater",
+             floor_strike=99, yes_bid_dollars="0.40", yes_ask_dollars="0.45", no_bid_dollars="0.55",
+             no_ask_dollars="0.60", volume_24h_fp="100", rules_primary="... Austin (CLIATT) ...")]}
+    k.events.side_effect = lambda s, **kw: [ev] if s == "KXHIGHAUS" else []
+    monkeypatch.setattr(A, "build_forecast", lambda *a, **kw: _fc([100] * 10))
+    monkeypatch.setattr(A, "datetime", _FixedDT)
+    ag = A.Agent.__new__(A.Agent)
+    ag.k, ag.db, ag.http, ag.errors, ag.halted = k, DB(), None, 0, False
+    ag.threshold, ag.active_series, ag.last_status = 0.06, ["KXHIGHAUS"], {}
+    ag.cycle()
+    assert not k.place.called
+
+
 def test_full_cycle_with_mocked_kalshi(monkeypatch):
     from agent import agent as A
     db = DB()
@@ -177,7 +197,7 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     ev = {"event_ticker": "KXHIGHNY-26SEP13", "markets": [
         dict(ticker="KXHIGHNY-26SEP13-T85", event_ticker="KXHIGHNY-26SEP13", status="open", strike_type="greater",
              floor_strike=84.5, yes_bid_dollars="0.40", yes_ask_dollars="0.45", no_bid_dollars="0.55",
-             no_ask_dollars="0.60", volume_24h_fp="100", rules_primary="... Central Park (KNYC) ...")]}
+             no_ask_dollars="0.60", volume_24h_fp="100", rules_primary="... New York City (CLINYC) ...")]}
     k.events.side_effect = lambda s, **kw: [ev] if s == "KXHIGHNY" else []
     k.place.return_value = {"order_id": "o1", "fill_count": "5.00", "average_fill_price": "0.45"}
     k.orderbook.return_value = {"yes_dollars": [["0.40", "50.00"]], "no_dollars": [["0.55", "5.00"]]}
