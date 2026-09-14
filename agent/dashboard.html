@@ -38,6 +38,11 @@
   #bigfrog .throat { transform-origin:center; transform-box:fill-box; animation:croak 2.4s ease-in-out infinite; }
   @keyframes croak { 0%,100% { transform:scale(1) } 50% { transform:scale(1.18) } }
   #bigfrog .lid { transform-origin:center; transform-box:fill-box; transform:scaleY(0); }
+  #bigfrog .pupil circle { animation:hue 5s linear infinite, wobble 1.7s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
+  #bigfrog .pupil .p1 { animation-delay:0s, 0s; } #bigfrog .pupil .p2 { animation-delay:-1.7s, -.6s; } #bigfrog .pupil .p3 { animation-delay:-3.4s, -1.1s; }
+  @keyframes hue { 0% { fill:#e3170a } 20% { fill:#ff8a1f } 40% { fill:#ffd23f } 60% { fill:#2fd36b } 80% { fill:#6aa4ff } 100% { fill:#e3170a } }
+  @keyframes wobble { 0% { transform:scale(1,1) } 25% { transform:scale(1.14,.9) } 50% { transform:scale(.92,1.1) } 75% { transform:scale(1.08,1.04) } 100% { transform:scale(1,1) } }
+  #bigfrog .ring { stroke:#2a2620; opacity:.35; }
   #lasers { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:3; overflow:visible; opacity:0; }
   #lasers.happy, #lasers.sad { animation:laser 1.6s ease-out 1; }
   @keyframes laser { 0% { opacity:0 } 8% { opacity:1 } 80% { opacity:1 } 100% { opacity:0 } }
@@ -179,7 +184,12 @@
         <circle class="ring ring2" cx="44" cy="34" r="9" fill="none" stroke="#e08a3c" stroke-width="2"/>
         <circle class="ring" cx="88" cy="34" r="9" fill="none" stroke="#b4541e" stroke-width="2"/>
         <circle class="ring ring2" cx="88" cy="34" r="9" fill="none" stroke="#e08a3c" stroke-width="2"/>
-        <circle cx="44" cy="34" r="3.2" fill="#2a2620"/><circle cx="88" cy="34" r="3.2" fill="#2a2620"/>
+        <g class="pupil" transform="translate(44 34)">
+          <circle class="p1" r="6"/><circle class="p2" r="4.2"/><circle class="p3" r="2.4"/>
+        </g>
+        <g class="pupil" transform="translate(88 34)">
+          <circle class="p1" r="6"/><circle class="p2" r="4.2"/><circle class="p3" r="2.4"/>
+        </g>
         <circle cx="46" cy="32" r="1.1" fill="#ffffff"/><circle cx="90" cy="32" r="1.1" fill="#ffffff"/>
         <rect class="lid" x="27" y="23" width="34" height="22" rx="11" fill="#a8c47f"/><rect class="lid" x="71" y="23" width="34" height="22" rx="11" fill="#a8c47f"/>
         <path class="mouth" d="M40 58 q26 18 52 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
