@@ -68,7 +68,7 @@
   .live.on i { background:var(--up); } .live.on { color:var(--up); }
   .live.dry i { background:var(--obs); } .live.dry { color:var(--obs); }
   .live.halt i { background:var(--dn); } .live.halt { color:var(--dn); }
-  .ledger { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:28px; align-items:end; margin-top:190px; position:relative; }
+  .ledger { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:28px; align-items:end; margin-top:170px; position:relative; }
   .big { font-size:96px; line-height:1; margin-top:6px; font-weight:500; letter-spacing:-.02em; white-space:nowrap; }
   .big small { font-size:48px; color:var(--mut); }
   .kv { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px 24px; }
@@ -78,9 +78,11 @@
   .bar { flex:1; height:10px; border-radius:5px; background:linear-gradient(90deg,#e8b49b 0%,#efe6d5 30%,#bfd8c9 100%); position:relative; }
   .dot { position:absolute; top:-5px; width:20px; height:20px; border-radius:50%; background:var(--ink); border:3px solid var(--bg); transition:left .6s ease; }
   .dot.model { top:-2px; width:14px; height:14px; background:var(--bg); border:3px solid var(--ink); }
-  h2 { font-size:22px; font-weight:400; margin:0; }
-  .sec { margin-top:28px; position:relative; }
-  .sec-h { display:flex; align-items:baseline; gap:12px; margin-bottom:8px; flex-wrap:wrap; }
+  h2 { font-size:21px; font-weight:400; margin:0; }
+  .sec { margin-top:44px; position:relative; }
+  .sec-h { display:flex; align-items:baseline; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+  .sec-h .tog { margin-left:auto; font-size:12px; color:var(--mut); background:none; border:1px solid var(--line); border-radius:3px; padding:3px 8px; cursor:pointer; font-family:inherit; }
+  .sec-h .tog:hover { color:var(--ink); }
   .sec-h .mut { font-size:13px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:4px; }
   table { width:100%; border-collapse:collapse; }
@@ -89,6 +91,14 @@
   tr:last-child td { border-bottom:none; }
   .num { text-align:right; }
   .wrap { overflow-x:auto; }
+  /* Open positions: a compact ledger, not the headline. Extra columns hide behind a toggle; long books scroll. */
+  #pos-box { max-height:340px; overflow:auto; scrollbar-width:thin; }
+  #positions th { padding:6px 8px; font-size:10px; position:sticky; top:0; background:var(--card); z-index:1; }
+  #positions td { padding:5px 8px; font-size:12px; }
+  #positions .x { display:none; }
+  #positions.wide .x { display:table-cell; }
+  #positions tfoot td { border-top:1px solid #d9d0c2; border-bottom:none; font-weight:600; position:sticky; bottom:0; background:var(--card); }
+  #positions td.mk { max-width:220px; overflow:hidden; text-overflow:ellipsis; }
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
   .split { display:grid; grid-template-columns:minmax(0,2fr) minmax(360px,1fr); gap:18px; align-items:start; }
   .actcol { position:sticky; top:16px; }
@@ -246,10 +256,11 @@
   </div>
 
   <div class="sec">
-    <div class="sec-h"><h2 class="serif">Open positions</h2><span id="poscount" class="mut">marked at the price you could sell for right now</span></div>
-    <div class="card wrap"><table id="positions"><thead><tr>
-      <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Paid</th><th class="num">Bid</th><th class="num">Mid</th><th class="num">Model</th><th class="num">In</th><th class="num">At bid</th><th class="num">At mid</th><th class="num">Model EV</th><th class="num">If win</th><th class="num">If lose</th>
-    </tr></thead><tbody></tbody></table></div>
+    <div class="sec-h"><h2 class="serif">Open positions</h2><span id="poscount" class="mut">marked at the price you could sell for right now</span>
+      <button class="tog" id="pos-tog" type="button">more columns</button></div>
+    <div class="card wrap" id="pos-box"><table id="positions"><thead><tr>
+      <th>Market</th><th>Side</th><th class="num">Qty</th><th class="num">Paid</th><th class="num">Bid</th><th class="num x">Mid</th><th class="num">Model</th><th class="num">In</th><th class="num">At bid</th><th class="num x">At mid</th><th class="num">Model EV</th><th class="num x">If win</th><th class="num x">If lose</th>
+    </tr></thead><tbody></tbody><tfoot></tfoot></table></div>
   </div>
 
   <div class="sec split">
@@ -366,15 +377,22 @@ function lasers(up){
 const prevMark = {};
 function positions(p){
   $('#poscount').textContent = (p.positions.length ? p.positions.length + ' · ' : '') + 'marked at the price you could sell for right now';
-  rows('#positions', p.positions.map(x=>{
+  // Biggest money at risk first: that is what you want to see without scrolling.
+  const list = p.positions.slice().sort((a,b)=>b.cost-a.cost);
+  rows('#positions', list.map(x=>{
     const was = prevMark[x.ticker]; const fl = was==null||was===x.mark ? '' : (x.mark>was ? 'fu' : 'fd'); prevMark[x.ticker] = x.mark;
-    return `<tr><td title="${esc(x.ticker)}">${esc(nameOf(x.ticker))}</td><td style="font-weight:600">${x.outcome.toUpperCase()}</td>
-      <td class="num mono">${x.count}</td><td class="num mono">${cents(x.cost_each)}</td><td class="num mono ${fl}">${cents(x.mark)}</td><td class="num mono ${fl}">${cents(x.mid)}</td>
+    return `<tr><td class="mk" title="${esc(x.ticker)}">${esc(nameOf(x.ticker))}</td><td style="font-weight:600">${x.outcome.toUpperCase()}</td>
+      <td class="num mono">${x.count}</td><td class="num mono">${cents(x.cost_each)}</td><td class="num mono ${fl}">${cents(x.mark)}</td><td class="num mono x ${fl}">${cents(x.mid)}</td>
       <td class="num mono">${pct(x.p_model)}</td><td class="num mono">${fmt$(x.cost)}</td>
-      <td class="num mono ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td><td class="num mono ${cls(x.unrealized_mid)} ${fl}">${fmt$(x.unrealized_mid)}</td>
+      <td class="num mono ${cls(x.unrealized)} ${fl}">${fmt$(x.unrealized)}</td><td class="num mono x ${cls(x.unrealized_mid)} ${fl}">${fmt$(x.unrealized_mid)}</td>
       <td class="num mono ${cls(x.unrealized_model)}">${fmt$(x.unrealized_model)}</td>
-      <td class="num mono up">+${fmt$(x.win)}</td><td class="num mono dn">${fmt$(x.lose)}</td></tr>`; }).join(''), 'no open positions');
+      <td class="num mono x up">+${fmt$(x.win)}</td><td class="num mono x dn">${fmt$(x.lose)}</td></tr>`; }).join(''), 'no open positions');
+  const sum = k => list.reduce((t,x)=>t+(x[k]||0),0);
+  $('#positions tfoot').innerHTML = list.length ? `<tr><td>Total</td><td></td><td class="num mono">${Math.round(sum('count'))}</td><td></td><td></td><td class="x"></td><td></td>
+      <td class="num mono">${fmt$(sum('cost'))}</td><td class="num mono ${cls(sum('unrealized'))}">${fmt$(sum('unrealized'))}</td><td class="num mono x ${cls(sum('unrealized_mid'))}">${fmt$(sum('unrealized_mid'))}</td>
+      <td class="num mono ${cls(sum('unrealized_model'))}">${fmt$(sum('unrealized_model'))}</td><td class="num mono x up">+${fmt$(sum('win'))}</td><td class="num mono x dn">${fmt$(sum('lose'))}</td></tr>` : '';
 }
+$('#pos-tog').onclick = () => { const t=$('#positions'); t.classList.toggle('wide'); $('#pos-tog').textContent = t.classList.contains('wide') ? 'fewer columns' : 'more columns'; };
 
 /* ---------- cities ---------- */
 const hourInTz = iso => { const m = iso.match(/T(\d\d):(\d\d)/); return m ? (+m[1] + (+m[2])/60) : 0; };

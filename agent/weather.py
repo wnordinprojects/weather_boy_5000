@@ -304,7 +304,9 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
             else:
                 members, hours_left = nowcast(hourly, obs, target, meta["tz"], kind, local_now)
                 # Uncertainty shrinks with the hours left in the day.
-                station_sd = config.STATION_ERROR_F * min(1.0, hours_left / 12)
+                # Never below ~0.8F while hours remain: a 1-2F evening drift is routine, and the
+                # day-one low losses came from the model calling the last 3 hours near-certain.
+                station_sd = max(config.MIN_INTRADAY_SD_F, config.STATION_ERROR_F * min(1.0, hours_left / 12))
                 notes.append(f"observed so far {obs_ext:.1f}F over {n_obs} obs, {hours_left}h left")
 
     if obs_ext is None:

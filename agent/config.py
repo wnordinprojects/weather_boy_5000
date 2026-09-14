@@ -80,6 +80,8 @@ MAX_CONSECUTIVE_ERRORS = 3
 # Inflate spread and add a floor of station error (deg F).
 SPREAD_INFLATION = _env("SPREAD_INFLATION", 1.3, float)
 STATION_ERROR_F = _env("STATION_ERROR_F", 1.6, float)
+# Floor on intraday uncertainty while the day is still running (deg F).
+MIN_INTRADAY_SD_F = _env("MIN_INTRADAY_SD_F", 0.8, float)
 # Hourly sampling misses the true daily max by a bit. Learned per station over time.
 DEFAULT_MAX_BIAS_F = _env("DEFAULT_MAX_BIAS_F", 0.8, float)
 ENSEMBLE_MODELS = _env("ENSEMBLE_MODELS", "gfs_seamless,ecmwf_ifs025,icon_seamless")
