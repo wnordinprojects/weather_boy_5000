@@ -62,20 +62,46 @@ import time as _time
 _model_cache, _model_lock = {}, _threading.Lock()
 
 
-def _cached(key, fn):
-    """Model runs change hourly at most; fast afternoon cycles must not re-download them."""
+_backoff_until = 0.0
+
+
+def _cached(key, fn, ttl=None):
+    """Model runs change hourly at most; fast afternoon cycles must not re-download them.
+
+    Open-Meteo's free tier is a daily quota. On a 429 we stop asking for MODEL_BACKOFF_S and keep
+    serving the last good payload (up to MODEL_STALE_S old) rather than going blind."""
+    global _backoff_until
+    ttl = config.MODEL_CACHE_S if ttl is None else ttl
     now = _time.time()
     with _model_lock:
         hit = _model_cache.get(key)
-        if hit and now - hit[0] < config.MODEL_CACHE_S:
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    if now < _backoff_until:
+        if hit and now - hit[0] < config.MODEL_STALE_S:
             return hit[1]
-    val = fn()
+        raise RuntimeError("open-meteo rate limited; no cached run")
+    try:
+        val = fn()
+    except Exception as e:
+        if "429" in str(e):
+            _backoff_until = now + config.MODEL_BACKOFF_S
+            log.warning("open-meteo 429: backing off %ds", config.MODEL_BACKOFF_S)
+        if hit and now - hit[0] < config.MODEL_STALE_S:
+            log.info("serving stale model run for %s (%s)", key, e)
+            return hit[1]
+        raise
     with _model_lock:
         _model_cache[key] = (now, val)
     return val
 
 
-def fetch_ensemble(lat, lon, tz, days=4, session=None):
+def rate_limited():
+    return _time.time() < _backoff_until
+
+
+def fetch_ensemble(lat, lon, tz, days=None, session=None):
+    days = config.ENSEMBLE_DAYS if days is None else days
     s = session or requests
     def go():
         r = s.get(ENSEMBLE_URL, params=dict(
@@ -98,7 +124,7 @@ def fetch_hrrr(lat, lon, tz, target: date, session=None):
                                                 forecast_days=2), timeout=30, headers=UA)
             r.raise_for_status()
             return r.json()
-        h = _cached(("hrrr", lat, lon), go)["hourly"]
+        h = _cached(("hrrr", lat, lon), go, config.HRRR_CACHE_S)["hourly"]
         vals = [v for t, v in zip(h["time"], h["temperature_2m"]) if t.startswith(target.isoformat())]
         if len(vals) != 24 or any(v is None for v in vals):
             return None

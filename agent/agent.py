@@ -14,7 +14,7 @@ from . import config
 from .db import DB
 from .kalshi import Kalshi, KalshiError
 from .strategy import plan_orders, available_at, fee, direction
-from .weather import build_forecast, fetch_observations, observed_extreme
+from .weather import build_forecast, fetch_observations, observed_extreme, rate_limited
 from .history import calibrate_all, station_calibration
 from .discovery import discover
 
@@ -453,7 +453,7 @@ class Agent:
                 log.exception("cycle error %d: %s", self.errors, e)
                 if self.errors >= config.MAX_CONSECUTIVE_ERRORS:
                     self.halted = True
-            fast = self.in_fast_window()
+            fast = self.in_fast_window() and not rate_limited()
             self.last_status["fast"] = fast
             time.sleep(config.CYCLE_SECONDS_FAST if fast else config.CYCLE_SECONDS)
 

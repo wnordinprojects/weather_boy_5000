@@ -130,7 +130,14 @@ CYCLE_SECONDS_FAST = _env("CYCLE_SECONDS_FAST", 120, int)
 FAST_START_HOUR = _env("FAST_START_HOUR", 12, int)
 FAST_END_HOUR = _env("FAST_END_HOUR", 17, int)
 # Reuse downloaded model runs for this long (seconds); observations are always fetched fresh.
-MODEL_CACHE_S = _env("MODEL_CACHE_S", 900, int)
+# Open-Meteo's free tier is a daily quota and ensemble calls are weighted heavily: one hour is plenty
+# (GFS/ECMWF/ICON refresh every 6-12h; HRRR hourly).
+MODEL_CACHE_S = _env("MODEL_CACHE_S", 3600, int)
+HRRR_CACHE_S = _env("HRRR_CACHE_S", 1800, int)
+ENSEMBLE_DAYS = _env("ENSEMBLE_DAYS", 2, int)
+# After a 429, stop calling Open-Meteo for this long and serve cached runs up to MODEL_STALE_S old.
+MODEL_BACKOFF_S = _env("MODEL_BACKOFF_S", 900, int)
+MODEL_STALE_S = _env("MODEL_STALE_S", 6 * 3600, int)
 
 # ---- Complement check -----------------------------------------------------
 # When an event's strikes partition the outcome space, their mids should sum to ~1. If they don't,
