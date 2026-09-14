@@ -84,7 +84,10 @@
   tr:last-child td { border-bottom:none; }
   .num { text-align:right; }
   .wrap { overflow-x:auto; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px,1fr)); gap:18px; }
+  .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
+  .split { display:grid; grid-template-columns:minmax(0,2fr) minmax(360px,1fr); gap:18px; align-items:start; }
+  .actcol { position:sticky; top:16px; }
+  .actcol .log { max-height:720px; overflow-y:auto; }
   .city { background:var(--card); border:1px solid var(--line); border-radius:4px; padding:16px 18px; }
   .city .hd { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
   .city .name { font-size:24px; }
@@ -94,7 +97,8 @@
   .chip { background:var(--chip); padding:3px 8px; border-radius:3px; }
   .chip.held { background:var(--ink); color:var(--bg); }
   .three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:18px; }
-  @media (max-width:1100px){ .three{grid-template-columns:1fr} .ledger{grid-template-columns:1fr} .range{border-left:none;padding-left:0} }
+  .two-col { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  @media (max-width:1100px){ .three{grid-template-columns:1fr} .split{grid-template-columns:1fr} .actcol{position:static} .ledger{grid-template-columns:1fr} .range{border-left:none;padding-left:0} }
   @media (max-width:600px){ .page{padding:16px} .big{font-size:64px} .big small{font-size:32px} .grid{grid-template-columns:1fr} }
   .log { display:grid; grid-template-columns:64px 1fr; gap:0 12px; align-items:baseline; font-size:13px; padding:4px 14px; }
   .log > div { padding:8px 0; border-bottom:1px solid var(--rule); }
@@ -232,12 +236,24 @@
     </tr></thead><tbody></tbody></table></div>
   </div>
 
-  <div class="sec">
-    <div class="sec-h"><h2 class="serif">Cities today</h2><span class="mut">orange: what the thermometer has done · blue: what the models expect · lines: strikes with market price and model odds</span></div>
-    <div class="grid" id="cities"></div>
+  <div class="sec split">
+    <div>
+      <div class="sec-h"><h2 class="serif">Cities today</h2><span class="mut">orange: thermometer so far · blue: model spread · lines: strikes with price and odds</span></div>
+      <div class="grid" id="cities"></div>
+    </div>
+    <div class="actcol">
+      <div class="sec-h" style="align-items:center;"><h2 class="serif">Activity log</h2>
+        <svg id="frog" viewBox="0 0 60 40" width="44" height="30" aria-label="frog"><g>
+          <ellipse cx="30" cy="26" rx="18" ry="9" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="22" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="38" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
+          <circle cx="23" cy="16" r="2" fill="#2a2620"/><circle cx="39" cy="16" r="2" fill="#2a2620"/><path d="M24 28 q6 4 12 0" fill="none" stroke="#2a2620" stroke-width="1.5" stroke-linecap="round"/></g></svg>
+        <span class="mut">hops on a new fill</span></div>
+      <div class="card"><div id="log" class="log"></div></div>
+      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">Passed on</h2><span class="mut">best edges it did not take</span></div>
+      <div class="card wrap"><table id="passes"><thead><tr><th>Market</th><th>Side</th><th class="num">Model</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+    </div>
   </div>
 
-  <div class="sec three">
+  <div class="sec three two-col">
     <div>
       <div class="sec-h"><h2 class="serif">Equity</h2></div>
       <div class="card" style="padding:12px;"><svg id="equity" style="width:100%; height:150px; display:block;"></svg>
@@ -260,16 +276,6 @@
       </div>
       <div class="sec-h" style="margin-top:18px;"><h2 class="serif">Settled</h2></div>
       <div class="card wrap"><table id="settled-tbl"><thead><tr><th>When</th><th>Market</th><th>Side</th><th>Result</th><th class="num">Qty</th><th class="num">Model</th><th class="num">P&amp;L</th></tr></thead><tbody></tbody></table></div>
-    </div>
-    <div>
-      <div class="sec-h" style="align-items:center;"><h2 class="serif">What it did</h2>
-        <svg id="frog" viewBox="0 0 60 40" width="44" height="30" aria-label="frog"><g>
-          <ellipse cx="30" cy="26" rx="18" ry="9" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="22" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/><circle cx="38" cy="16" r="6" fill="#a8c47f" stroke="#2a2620" stroke-width="2"/>
-          <circle cx="23" cy="16" r="2" fill="#2a2620"/><circle cx="39" cy="16" r="2" fill="#2a2620"/><path d="M24 28 q6 4 12 0" fill="none" stroke="#2a2620" stroke-width="1.5" stroke-linecap="round"/></g></svg>
-        <span class="mut">hops on a new fill</span></div>
-      <div class="card"><div id="log" class="log"></div></div>
-      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">Passed on</h2><span class="mut">best edges it did not take</span></div>
-      <div class="card wrap"><table id="passes"><thead><tr><th>Market</th><th>Side</th><th class="num">Model</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th></tr></thead><tbody></tbody></table></div>
     </div>
   </div>
   <div id="mult" style="margin-top:40px; font-size:11px; color:#c2b9ab; text-align:right;"></div>
