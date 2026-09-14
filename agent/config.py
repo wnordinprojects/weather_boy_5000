@@ -100,3 +100,14 @@ STATIONS = {
 LOW_SERIES = {f"KXLOWT{k[6:]}": v for k, v in STATIONS.items()}
 SERIES = {**STATIONS, **LOW_SERIES}
 
+
+def register_series(ticker, meta):
+    """Add a discovered series at runtime (see discovery.py). Idempotent."""
+    SERIES[ticker] = dict(meta)
+
+
+# Discover new temperature cities from Kalshi automatically (daily). Set 0 to trade only the list above.
+DISCOVER_SERIES = _env("DISCOVER_SERIES", True, bool)
+# Same-day: blend the ensemble's hourly trace with HRRR (3 km, hourly-updating). 0 = ensemble only.
+HRRR_WEIGHT = _env("HRRR_WEIGHT", 0.5, float)
+

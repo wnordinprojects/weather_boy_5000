@@ -22,6 +22,7 @@ from . import config
 log = logging.getLogger("weather")
 UA = {"User-Agent": "kalshi-weather-agent (contact: walker.nordin@ontailwind.com)"}
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 NWS_OBS_URL = "https://api.weather.gov/stations/{station}/observations"
 
 
@@ -64,6 +65,25 @@ def fetch_ensemble(lat, lon, tz, days=4, session=None):
         timezone=tz, forecast_days=days), timeout=30, headers=UA)
     r.raise_for_status()
     return r.json()
+
+
+def fetch_hrrr(lat, lon, tz, target: date, session=None):
+    """HRRR hourly temps (deg F) for `target` local date, or None if unavailable.
+    3 km grid, refreshed hourly: the best same-day guidance for US stations."""
+    s = session or requests
+    try:
+        r = s.get(FORECAST_URL, params=dict(latitude=lat, longitude=lon, hourly="temperature_2m",
+                                            models="gfs_hrrr", temperature_unit="fahrenheit", timezone=tz,
+                                            forecast_days=2), timeout=30, headers=UA)
+        r.raise_for_status()
+        h = r.json()["hourly"]
+        vals = [v for t, v in zip(h["time"], h["temperature_2m"]) if t.startswith(target.isoformat())]
+        if len(vals) != 24 or any(v is None for v in vals):
+            return None
+        return np.array(vals, dtype=float)
+    except Exception as e:
+        log.info("hrrr unavailable: %s", e)
+        return None
 
 
 def ensemble_hourly(payload, target: date) -> np.ndarray:
@@ -172,9 +192,15 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
     hourly = ensemble_hourly(payload, target)
     if hourly.size == 0:
         raise RuntimeError(f"no ensemble data for {series} {target}")
+    hourly = hourly.copy()
+    if config.HRRR_WEIGHT > 0 and target <= local_now.date() + timedelta(days=1):
+        hrrr = fetch_hrrr(meta["lat"], meta["lon"], meta["tz"], target, session)
+        if hrrr is not None:
+            # Pull every member toward the high-resolution trace; the ensemble keeps its spread.
+            hourly = (1 - config.HRRR_WEIGHT) * hourly + config.HRRR_WEIGHT * hrrr[None, :]
+            notes.append("hrrr")
     if cal and cal.get("evening_bias") is not None:
         # Learned nighttime error at this station (grid cell vs sensor, urban heat, etc.).
-        hourly = hourly.copy()
         hourly[:, 17:] += cal["evening_bias"]
         notes.append(f"evening bias {cal['evening_bias']:+.1f}F")
     members = np.nanmax(hourly, axis=1) if kind == "high" else np.nanmin(hourly, axis=1)

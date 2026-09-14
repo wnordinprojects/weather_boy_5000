@@ -216,6 +216,29 @@ def test_low_markets_wait_for_evening(monkeypatch):
     assert d["action"] == "hold" and "lows open after" in d["reason"]
 
 
+def test_hrrr_blends_into_members(monkeypatch):
+    hrrr = {"hourly": {"time": [f"2026-09-13T{h:02d}:00" for h in range(24)] + [f"2026-09-14T{h:02d}:00" for h in range(24)],
+                       "temperature_2m": [90.0] * 48}}
+    class R:
+        def __init__(self, j): self.j = j
+        def raise_for_status(self): pass
+        def json(self): return self.j
+    def get(url, **kw):
+        if "ensemble" in url: return R(ENSEMBLE)
+        if "v1/forecast" in url: return R(hrrr)
+        return R({"features": []})
+    monkeypatch.setattr(config, "HRRR_WEIGHT", 0.5)
+    fc = weather.build_forecast("KXHIGHNY", date(2026, 9, 14), "high", bias_f=0.0, session=mock.Mock(get=get),
+                                now=datetime(2026, 9, 13, 12, tzinfo=ZoneInfo("America/New_York")))
+    assert "hrrr" in fc.notes
+    # ensemble members peak 83/85/87; HRRR says 90 -> blended peaks 86.5/87.5/88.5 (+/- noise)
+    assert 85.5 <= fc.median <= 89.5
+    monkeypatch.setattr(config, "HRRR_WEIGHT", 0.0)
+    fc0 = weather.build_forecast("KXHIGHNY", date(2026, 9, 14), "high", bias_f=0.0, session=mock.Mock(get=get),
+                                 now=datetime(2026, 9, 13, 12, tzinfo=ZoneInfo("America/New_York")))
+    assert "hrrr" not in fc0.notes and fc0.median < fc.median
+
+
 def test_history_fit_measures_evening_bias():
     from agent import history
     prev, obs = {}, []

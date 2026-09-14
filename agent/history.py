@@ -93,13 +93,14 @@ def fit(prev, obs):
                 evening_bias=float(np.mean(eve_res)) if eve_res else 0.0)
 
 
-def calibrate_all(db, days=45, session=None):
-    """Run for every station (highs and lows share one). Stores results in db state 'hist:<station>'."""
+def calibrate_all(db, days=45, session=None, only=None):
+    """Run for every station (highs and lows share one). Stores results in db state 'hist:<station>'.
+    `only`: optional set of stations to restrict to."""
     done = {}
     seen = set()
-    for series, meta in config.SERIES.items():
+    for series, meta in list(config.SERIES.items()):
         st = meta["station"]
-        if st in seen:
+        if st in seen or (only is not None and st not in only):
             continue
         seen.add(st)
         try:

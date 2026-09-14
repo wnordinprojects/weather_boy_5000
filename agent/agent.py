@@ -16,6 +16,7 @@ from .kalshi import Kalshi, KalshiError
 from .strategy import plan_orders, available_at, fee
 from .weather import build_forecast, fetch_observations, observed_extreme
 from .history import calibrate_all, station_calibration
+from .discovery import discover
 
 log = logging.getLogger("agent")
 MONTHS = {m: i for i, m in enumerate(
@@ -47,6 +48,7 @@ class Agent:
         self.threshold = self.db.get_state("edge_threshold", config.EDGE_THRESHOLD)
         self.model_weight = self.db.get_state("model_weight", config.MODEL_WEIGHT)
         self.active_series = list(config.SERIES)
+        self._dropped = set()
         self.last_status = {}
 
     def sync_orders(self):
@@ -123,6 +125,7 @@ class Agent:
         cycle_id = self.db.cycle(balance=bankroll, n_markets=0, n_orders=0,
                                  edge_threshold=self.threshold, notes="")
         fc_cache = {}
+        self.active_series = [t for t in config.SERIES if t not in getattr(self, "_dropped", set())]
         for series in list(self.active_series):
             if self.db.benched(series):
                 continue
@@ -132,6 +135,7 @@ class Agent:
                 if "404" in str(e) or "not found" in str(e).lower():
                     log.info("series %s not found; dropping", series)
                     self.active_series.remove(series)
+                    self._dropped.add(series)
                     continue
                 raise
             for ev in events:
@@ -345,15 +349,35 @@ class Agent:
             self.db.set_state(f"cal:{series}", yday.isoformat())
             log.info("calibrated %s: truth %.1f model %.1f bias %.2f -> %.2f", series, truth, raw_median, old, new)
 
+    def discovery(self):
+        """Find new temperature cities once a day; register known ones at startup."""
+        if not config.DISCOVER_SERIES:
+            return
+        if time.time() - self.db.get_state("discover_last", 0) < 86400 and self.db.get_state("series_map"):
+            for t, meta in self.db.get_state("series_map", {}).items():
+                config.register_series(t, meta)
+            self.active_series = list(config.SERIES)
+            return
+        try:
+            n = discover(self.k, self.db, self.http)
+            self.active_series = list(config.SERIES)
+            if n:
+                log.info("discovery added %d series; now tracking %d", n, len(config.SERIES))
+                self.db.set_state("hist_last", 0)      # calibrate the new stations right away
+        except Exception as e:
+            log.warning("discovery error: %s", e)
+
     def history_calibration(self):
         """Refit station biases from the last 45 days, once a day, in the background."""
         last = self.db.get_state("hist_last", 0)
-        if time.time() - last < 86400:
+        uncal = [m["station"] for m in config.SERIES.values() if not self.db.get_state(f"hist:{m['station']}")]
+        if time.time() - last < 86400 and not uncal:
             return
         self.db.set_state("hist_last", time.time())
+        only = None if time.time() - last >= 86400 else set(uncal)
         def run():
             try:
-                res = calibrate_all(self.db, days=45, session=requests.Session())
+                res = calibrate_all(self.db, days=45, session=requests.Session(), only=only)
                 log.info("history calibration done for %d stations", len(res))
             except Exception as e:
                 log.warning("history calibration failed: %s", e)
@@ -369,6 +393,7 @@ class Agent:
                 time.sleep(3600)
                 self.halted, self.errors = False, 0
             try:
+                self.discovery()
                 self.history_calibration()
                 self.reconcile()
                 self.cycle()
