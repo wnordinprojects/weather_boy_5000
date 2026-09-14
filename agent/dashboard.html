@@ -29,7 +29,9 @@
   header { display:flex; align-items:center; gap:32px; position:relative; flex-wrap:wrap; }
   header h1 { margin:0; display:flex; align-items:center; gap:16px; }
   header h1 .word { font-family:"Newsreader", Georgia, serif; font-size:34px; font-weight:500; letter-spacing:-.01em; line-height:1.05; }
-  header h1 .word span { color:var(--dn); }
+  header h1 .word span { background:linear-gradient(90deg,#e3170a,#ff8a1f,#ffd23f,#2fd36b,#6aa4ff,#a86bff,#e3170a); background-size:300% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent; animation:rainbow 6s linear infinite; }
+  @keyframes rainbow { from { background-position:0% 50% } to { background-position:300% 50% } }
   header h1 .tag { display:block; font-family:"IBM Plex Sans", sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin-top:4px; }
   #bigfrog { width:184px; height:154px; display:block; }
   #bigfrog .ring { transform-origin:center; transform-box:fill-box; animation:hypno 3.2s ease-in-out infinite; }
