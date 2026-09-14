@@ -57,14 +57,34 @@ class Forecast:
 
 
 # --------------------------------------------------------------------------
+import threading as _threading
+import time as _time
+_model_cache, _model_lock = {}, _threading.Lock()
+
+
+def _cached(key, fn):
+    """Model runs change hourly at most; fast afternoon cycles must not re-download them."""
+    now = _time.time()
+    with _model_lock:
+        hit = _model_cache.get(key)
+        if hit and now - hit[0] < config.MODEL_CACHE_S:
+            return hit[1]
+    val = fn()
+    with _model_lock:
+        _model_cache[key] = (now, val)
+    return val
+
+
 def fetch_ensemble(lat, lon, tz, days=4, session=None):
     s = session or requests
-    r = s.get(ENSEMBLE_URL, params=dict(
-        latitude=lat, longitude=lon, hourly="temperature_2m",
-        models=config.ENSEMBLE_MODELS, temperature_unit="fahrenheit",
-        timezone=tz, forecast_days=days), timeout=30, headers=UA)
-    r.raise_for_status()
-    return r.json()
+    def go():
+        r = s.get(ENSEMBLE_URL, params=dict(
+            latitude=lat, longitude=lon, hourly="temperature_2m",
+            models=config.ENSEMBLE_MODELS, temperature_unit="fahrenheit",
+            timezone=tz, forecast_days=days), timeout=30, headers=UA)
+        r.raise_for_status()
+        return r.json()
+    return _cached(("ens", lat, lon, days), go)
 
 
 def fetch_hrrr(lat, lon, tz, target: date, session=None):
@@ -72,11 +92,13 @@ def fetch_hrrr(lat, lon, tz, target: date, session=None):
     3 km grid, refreshed hourly: the best same-day guidance for US stations."""
     s = session or requests
     try:
-        r = s.get(FORECAST_URL, params=dict(latitude=lat, longitude=lon, hourly="temperature_2m",
-                                            models="gfs_hrrr", temperature_unit="fahrenheit", timezone=tz,
-                                            forecast_days=2), timeout=30, headers=UA)
-        r.raise_for_status()
-        h = r.json()["hourly"]
+        def go():
+            r = s.get(FORECAST_URL, params=dict(latitude=lat, longitude=lon, hourly="temperature_2m",
+                                                models="gfs_hrrr", temperature_unit="fahrenheit", timezone=tz,
+                                                forecast_days=2), timeout=30, headers=UA)
+            r.raise_for_status()
+            return r.json()
+        h = _cached(("hrrr", lat, lon), go)["hourly"]
         vals = [v for t, v in zip(h["time"], h["temperature_2m"]) if t.startswith(target.isoformat())]
         if len(vals) != 24 or any(v is None for v in vals):
             return None
@@ -143,9 +165,10 @@ def nowcast(members_hourly: np.ndarray, obs, target: date, tz: str, kind: str, l
     return fut_ext, future.shape[1]
 
 
-def fetch_observations(station, start_utc: datetime, session=None, max_pages=6):
+def fetch_observations(station, start_utc: datetime, session=None, max_pages=6, raw_out=None):
     """All observations since start_utc. Busy ASOS stations report every minute, so one
-    page (max 500) covers only a few hours; follow pagination until the window is exhausted."""
+    page (max 500) covers only a few hours; follow pagination until the window is exhausted.
+    If `raw_out` is a list, (ts, rawMessage) pairs are appended to it for METAR remark parsing."""
     s = session or requests
     url = NWS_OBS_URL.format(station=station)
     params = dict(start=start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), limit=500)
@@ -164,11 +187,50 @@ def fetch_observations(station, start_utc: datetime, session=None, max_pages=6):
             ts = datetime.fromisoformat(p["timestamp"].replace("Z", "+00:00"))
             f_val = v * 9 / 5 + 32 if (t.get("unitCode", "").endswith("degC")) else v
             out.append((ts, float(f_val)))
+            if raw_out is not None and p.get("rawMessage"):
+                raw_out.append((ts, p["rawMessage"]))
         nxt = (j.get("pagination") or {}).get("next")
         if not nxt or len(feats) < 500:
             break
         url, params = nxt, None
     return sorted(set(out))
+
+
+import re as _re
+_METAR_MAX = _re.compile(r"(?:^|\s)1([01])(\d{3})(?=\s|$)")
+_METAR_MIN = _re.compile(r"(?:^|\s)2([01])(\d{3})(?=\s|$)")
+
+
+def _group_f(sign, ttt):
+    c = int(ttt) / 10.0 * (-1 if sign == "1" else 1)
+    return c * 9 / 5 + 32
+
+
+def metar_extreme(raws, target: date, tz, kind):
+    """Exact 6-hour max/min from METAR remarks (1sTTT / 2sTTT groups, reported at 00/06/12/18Z).
+
+    Hourly and even 1-minute obs can miss the true peak between reports; the 6-hour group is the
+    sensor's own running extreme and is what the climate report (settlement) is built from.
+    A group covers the 6 hours ending at the report time; only windows lying wholly inside the
+    target local day count, so a window that straddles midnight is ignored.
+    Returns deg F or None."""
+    z = ZoneInfo(tz)
+    pat = _METAR_MAX if kind == "high" else _METAR_MIN
+    vals = []
+    for ts, raw in raws:
+        if "RMK" not in raw:
+            continue
+        m = pat.search(raw.split("RMK", 1)[1])
+        if not m:
+            continue
+        end = ts.astimezone(z)
+        start = end - timedelta(hours=6)
+        if end.date() != target or start.date() != target:
+            continue
+        vals.append(_group_f(m.group(1), m.group(2)))
+    if not vals:
+        return None
+    return max(vals) if kind == "high" else min(vals)
 
 
 def observed_extreme(obs, target: date, tz, kind):
@@ -220,8 +282,13 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
     if target <= local_now.date():
         start_utc = datetime.combine(target, datetime.min.time(), z).astimezone(ZoneInfo("UTC"))
         try:
-            obs = fetch_observations(meta["station"], start_utc - timedelta(hours=1), session=session)
+            raws = []
+            obs = fetch_observations(meta["station"], start_utc - timedelta(hours=1), session=session, raw_out=raws)
             obs_ext, n_obs = observed_extreme(obs, target, meta["tz"], kind)
+            mx = metar_extreme(raws, target, meta["tz"], kind)
+            if mx is not None and obs_ext is not None and ((kind == "high" and mx > obs_ext) or (kind == "low" and mx < obs_ext)):
+                notes.append(f"metar 6h {kind} {mx:.1f}F beats obs {obs_ext:.1f}F")
+                obs_ext = mx
             obs_trace = [[ts.astimezone(z).isoformat(), round(v, 1)] for ts, v in obs
                          if ts.astimezone(z).date() == target]
         except Exception as e:  # observations are an enhancement, never a blocker

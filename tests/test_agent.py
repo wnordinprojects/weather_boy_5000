@@ -363,3 +363,102 @@ class _FixedDT(datetime):
     @classmethod
     def now(cls, tz=None):
         return datetime(2026, 9, 13, 12, tzinfo=tz or ZoneInfo("UTC"))
+
+
+# ---- items 3-8 ------------------------------------------------------------
+def _m(ticker, st, lo=None, hi=None, yb=0.5, ya=0.55):
+    return dict(ticker=ticker, event_ticker=ticker.rsplit("-", 1)[0], strike_type=st, floor_strike=lo, cap_strike=hi,
+                yes_bid_dollars=f"{yb:.2f}", yes_ask_dollars=f"{ya:.2f}",
+                no_bid_dollars=f"{1-ya:.2f}", no_ask_dollars=f"{1-yb:.2f}", volume_24h_fp="10")
+
+
+def test_floor_trade_is_its_own_class():
+    # Thermometer already hit 86 today; ">83" is decided by 2.5F. Market still 90/93.
+    fc = _fc([86] * 10)
+    fc = weather.Forecast(fc.series, fc.target_date, "high", fc.samples, 86.0, 50, False, fc.local_now)
+    m = _m("E-T83", "greater", lo=83.5, yb=0.90, ya=0.93)
+    assert strategy.floor_margin(fc, m) == pytest.approx(2.5)
+    c = strategy.evaluate(fc, m, threshold=0.10, model_weight=0.3)
+    assert c.floor and c.outcome == "yes" and c.threshold == config.FLOOR_EDGE
+    orders, dec = strategy.plan_orders(fc, [m], 100, {}, 0.10, 0, model_weight=0.3)
+    assert orders and orders[0]["floor"] and dec[0]["reason"] == "floor"
+    assert orders[0]["spent"] <= config.FLOOR_EVENT_FRACTION * 100 + 1e-9
+    # Only 1F past the strike: not a floor, and the ordinary threshold applies.
+    fc2 = weather.Forecast(fc.series, fc.target_date, "high", np.array([84.0] * 10), 84.5, 50, False, fc.local_now)
+    assert not strategy.evaluate(fc2, m, 0.10, 0.3).floor
+    # Low market mirror: running min 60 decides "between 63..64" as NO by 3F.
+    fcl = weather.Forecast(fc.series, fc.target_date, "low", np.array([60.0] * 10), 60.0, 50, False, fc.local_now)
+    assert strategy.floor_margin(fcl, _m("L-B63.5", "between", lo=62.5, hi=64.5)) == pytest.approx(2.5)
+
+
+def test_metar_six_hour_group_beats_hourly_obs():
+    z = ZoneInfo("America/New_York")
+    tgt = date(2026, 9, 13)
+    # 18Z report (2pm local) carries 6h max 10289 = 28.9C = 84.0F; hourly obs topped out at 82.
+    raws = [(datetime(2026, 9, 13, 18, 0, tzinfo=ZoneInfo("UTC")), "KNYC 131800Z 20008KT 10SM CLR 28/17 A3005 RMK AO2 SLP176 10289 20161 T02830167"),
+            # 06Z window straddles midnight: ignored even though it is hotter.
+            (datetime(2026, 9, 13, 6, 0, tzinfo=ZoneInfo("UTC")), "KNYC 130600Z RMK AO2 10350 20200")]
+    assert weather.metar_extreme(raws, tgt, "America/New_York", "high") == pytest.approx(84.02, abs=0.01)
+    assert weather.metar_extreme(raws, tgt, "America/New_York", "low") == pytest.approx(60.98, abs=0.01)
+    assert weather.metar_extreme([], tgt, "America/New_York", "high") is None
+    # negative sign group
+    assert weather._group_f("1", "050") == pytest.approx(23.0)
+
+
+def test_complement_norm_rescales_cheap_books():
+    legs = [_m("E-T70", "less", hi=70.5, yb=0.10, ya=0.12), _m("E-B71.5", "between", lo=70.5, hi=72.5, yb=0.30, ya=0.32),
+            _m("E-B73.5", "between", lo=72.5, hi=74.5, yb=0.25, ya=0.27), _m("E-T74", "greater", lo=74.5, yb=0.10, ya=0.12)]
+    # mids sum to 0.795: every leg is cheap
+    n = strategy.complement_norm(legs)
+    assert n == pytest.approx(0.79)
+    fc = _fc([72] * 10)
+    c_raw = strategy.evaluate(fc, legs[1], 0.06, model_weight=0.5, mkt_norm=1.0)
+    c_norm = strategy.evaluate(fc, legs[1], 0.06, model_weight=0.5, mkt_norm=n)
+    assert c_norm.p > c_raw.p                     # normalized market says 'between 71-72' is likelier
+    # not a partition (no lower tail) -> untouched
+    assert strategy.complement_norm(legs[1:]) == 1.0
+    # close to 1 -> untouched
+    ok = [_m("E-T70", "less", hi=70.5, yb=0.48, ya=0.50), _m("E-B71.5", "between", lo=70.5, hi=72.5, yb=0.2, ya=0.22),
+          _m("E-T72", "greater", lo=72.5, yb=0.28, ya=0.30)]
+    assert strategy.complement_norm(ok) == 1.0
+
+
+def test_correlation_shrinks_size_and_global_cap_binds():
+    fc = _fc([90] * 8 + [80] * 2)          # P(>85) = 0.8
+    m = _m("E-T85", "greater", lo=84.5, yb=0.50, ya=0.55)
+    base, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0)
+    corr, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0, corr={"warm": 3})
+    assert base[0]["direction"] == "warm"
+    k = strategy.kelly_contracts(0.8, 0.55, 1000, config.KELLY_FRACTION)
+    assert corr[0]["count"] == int(k / 2)                          # sqrt(1+3) = 2
+    cold, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0, corr={"cold": 3})
+    assert cold[0]["count"] == base[0]["count"] > corr[0]["count"]   # other direction: no shrink
+    capped, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0, global_budget=11.0)
+    assert capped[0]["spent"] <= 11.0
+    assert strategy.direction({"ticker": "X-T80"}, "no") == "cold"
+    assert strategy.direction({"ticker": "X-B80.5"}, "yes") is None
+
+
+def test_day_ahead_gate_and_fast_window(monkeypatch):
+    from agent.agent import Agent
+    a = Agent.__new__(Agent)
+    a.db = DB(os.path.join(tempfile.mkdtemp(), "t.db"))
+    a.active_series = ["KXHIGHNY"]
+    assert not a.day_ahead_ok("KNYC")
+    a.db.set_state("hist:KNYC", dict(n=30, high_sd=1.8, low_sd=2.0))
+    assert a.day_ahead_ok("KNYC")
+    a.db.set_state("hist:KNYC", dict(n=30, high_sd=3.5, low_sd=2.0))
+    assert not a.day_ahead_ok("KNYC")
+    # fast window follows the station's local clock
+    import agent.agent as ag
+    class FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 13, 18, 30, tzinfo=ZoneInfo("UTC")).astimezone(tz)   # 14:30 New York
+    monkeypatch.setattr(ag, "datetime", FakeDT)
+    assert a.in_fast_window()
+    a.active_series = ["KXHIGHLAX"]                                                        # 11:30 LA
+    assert not a.in_fast_window()
+    # event lean from held tickers
+    lean = a.event_directions({"E1-T80": 10, "E2-T70": -5, "E3-B75.5": 4})
+    assert lean == {"E1": {"warm"}, "E2": {"cold"}}

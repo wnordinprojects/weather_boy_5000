@@ -13,7 +13,7 @@ import requests
 from . import config
 from .db import DB
 from .kalshi import Kalshi, KalshiError
-from .strategy import plan_orders, available_at, fee
+from .strategy import plan_orders, available_at, fee, direction
 from .weather import build_forecast, fetch_observations, observed_extreme
 from .history import calibrate_all, station_calibration
 from .discovery import discover
@@ -88,6 +88,40 @@ class Agent:
             spent[ev] = spent.get(ev, 0.0) + n * cost
         return pend, spent
 
+    def event_directions(self, positions):
+        """{event_ticker: {'warm','cold'}} for open positions, from the ticker's strike and side."""
+        out = {}
+        for t, n in positions.items():
+            if not n:
+                continue
+            try:
+                d = direction({"ticker": t}, "yes" if n > 0 else "no")
+            except Exception:
+                d = None
+            if d:
+                out.setdefault(t.rsplit("-", 1)[0], set()).add(d)
+        return out
+
+    def day_ahead_ok(self, station):
+        """Trade tomorrow at this station only once history says the day-ahead forecast is tight."""
+        if not config.DAY_AHEAD_AUTO:
+            return False
+        cal = station_calibration(self.db, station)
+        if not cal or cal.get("n", 0) < config.DAY_AHEAD_MIN_N:
+            return False
+        return max(cal.get("high_sd", 9), cal.get("low_sd", 9)) <= config.DAY_AHEAD_MAX_SD
+
+    def in_fast_window(self):
+        """True while any tracked station is in its afternoon peak window (local time)."""
+        for series in self.active_series:
+            meta = config.SERIES.get(series)
+            if not meta or self.db.benched(series):
+                continue
+            h = datetime.now(ZoneInfo(meta["tz"])).hour
+            if config.FAST_START_HOUR <= h < config.FAST_END_HOUR:
+                return True
+        return False
+
     # ---- one cycle --------------------------------------------------------
     def cycle(self):
         t0 = time.time()
@@ -121,6 +155,10 @@ class Agent:
             positions[t] = positions.get(t, 0) + n
         for ev, d in pend_spent.items():
             event_spent[ev] = event_spent.get(ev, 0.0) + d
+        # Correlation bookkeeping: which way does each open event lean?
+        lean = self.event_directions(positions)
+        exposure = sum(event_spent.values())
+        global_budget = max(0.0, config.MAX_TOTAL_EXPOSURE * (bankroll + exposure) - exposure)
         n_markets = n_orders = 0
         cycle_id = self.db.cycle(balance=bankroll, n_markets=0, n_orders=0,
                                  edge_threshold=self.threshold, notes="")
@@ -145,8 +183,10 @@ class Agent:
                 kind = series_kind(series)
                 meta = config.SERIES[series]
                 today = datetime.now(ZoneInfo(meta["tz"])).date()
-                if tgt < today or tgt > today + timedelta(days=config.DAYS_AHEAD):
+                ahead = max(config.DAYS_AHEAD, 1 if self.day_ahead_ok(meta["station"]) else 0)
+                if tgt < today or tgt > today + timedelta(days=ahead):
                     continue
+                day_ahead = tgt > today
                 key = (series, tgt)
                 if key not in fc_cache:
                     try:
@@ -182,20 +222,30 @@ class Agent:
                                 ev["event_ticker"], cli.group(1), meta["station"])
                     self.db.skip(ticker=ev["event_ticker"], outcome="", reason=f"station mismatch CLI{cli.group(1)} vs {meta['station']}")
                     continue
+                evt = ev["event_ticker"]
+                corr = {d: sum(1 for e2, ds in lean.items() if e2 != evt and d in ds) for d in ("warm", "cold")}
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
-                                                event_spent.get(ev["event_ticker"], 0.0), costs, self.model_weight)
+                                                event_spent.get(evt, 0.0), costs, self.model_weight,
+                                                corr=corr, global_budget=global_budget,
+                                                event_fraction=config.DAY_AHEAD_EVENT_FRACTION if day_ahead else None)
                 if lows_blocked:
+                    # Floors are already decided by the thermometer; only speculative lows wait.
+                    floors = {o["ticker"] for o in orders if o.get("floor")}
                     for d in decisions:
-                        if d["action"] == "buy":
+                        if d["action"] == "buy" and d["ticker"] not in floors:
                             d["action"], d["count"], d["reason"] = "hold", 0, f"lows open after {config.LOW_TRADE_AFTER_HOUR}:00 local"
-                    orders = [o for o in orders if o["action"] != "buy"]
+                    orders = [o for o in orders if o["action"] != "buy" or o.get("floor")]
                 for d in decisions:
                     self.db.decision(cycle_id=cycle_id, series=series, **d)
                 for o in orders:
                     filled = self.execute(o, series)
                     n_orders += filled
-                    if filled and o["action"] == "buy" and not config.DRY_RUN:
-                        bankroll -= o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"])
+                    if filled and o["action"] == "buy":
+                        if o.get("direction"):
+                            lean.setdefault(evt, set()).add(o["direction"])
+                        global_budget = max(0.0, global_budget - o.get("spent", 0.0))
+                        if not config.DRY_RUN:
+                            bankroll -= o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"])
         self.db.c.execute("UPDATE cycles SET n_markets=?, n_orders=?, notes=? WHERE id=?",
                           (n_markets, n_orders, f"{time.time()-t0:.1f}s", cycle_id))
         self.db.c.commit()
@@ -250,8 +300,8 @@ class Agent:
                       outcome=o["outcome"], count=o["count"], yes_price=o["yes_price"],
                       p_model=o["p_model"], edge=o["edge"], order_id=r.get("order_id"),
                       fill_count=fill, avg_fill=avg, raw=str(r)[:500], status=status)
-        log.info("%s %s %s x%d @ yes %.2f (p=%.2f edge=%.3f) filled %.0f", o["action"], o["outcome"],
-                 o["ticker"], o["count"], o["yes_price"], o["p_model"], o["edge"], fill)
+        log.info("%s%s %s %s x%d @ yes %.2f (p=%.2f edge=%.3f) filled %.0f", "floor " if o.get("floor") else "",
+                 o["action"], o["outcome"], o["ticker"], o["count"], o["yes_price"], o["p_model"], o["edge"], fill)
         return 1 if fill > 0 or maker or r.get("dry_run") else 0
 
     # ---- reconcile settled markets, learn --------------------------------
@@ -403,7 +453,9 @@ class Agent:
                 log.exception("cycle error %d: %s", self.errors, e)
                 if self.errors >= config.MAX_CONSECUTIVE_ERRORS:
                     self.halted = True
-            time.sleep(config.CYCLE_SECONDS)
+            fast = self.in_fast_window()
+            self.last_status["fast"] = fast
+            time.sleep(config.CYCLE_SECONDS_FAST if fast else config.CYCLE_SECONDS)
 
 
 class RingLog(logging.Handler):

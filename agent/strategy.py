@@ -124,53 +124,120 @@ class Candidate:
     edge: float
     saturated: bool
     threshold: float
+    floor: bool = False # thermometer already decided this market
+    direction: str | None = None   # 'warm' | 'cold' | None (pays when temp is higher / lower)
 
 
-def evaluate(fc: Forecast, m, threshold, model_weight=None) -> Candidate | None:
+def floor_margin(fc: Forecast, m):
+    """Degrees F by which today's observed extreme has already decided this market, or None.
+
+    High markets are decided by the running max M: '>lo' is YES once M passes lo; '<hi' and
+    'between' are NO once M passes hi. Low markets mirror with the running min.
+    """
+    x = fc.observed_extreme
+    if x is None or fc.locked:
+        return None
+    kind, lo, hi = strike(m)
+    if fc.kind == "high":
+        return x - lo if kind in ("gt", "ge") else x - hi
+    return lo - x if kind in ("gt", "ge", "between") else hi - x
+
+
+def direction(m, outcome):
+    """Which way the temperature has to go for this bet to pay."""
+    kind, _, _ = strike(m)
+    if kind in ("gt", "ge"):
+        return "warm" if outcome == "yes" else "cold"
+    if kind in ("lt", "le"):
+        return "cold" if outcome == "yes" else "warm"
+    return None
+
+
+def complement_norm(markets):
+    """Sum of the market mids over an event whose strikes partition the outcome space.
+
+    Returns 1.0 when the strikes are not a partition or the sum is already close to 1;
+    otherwise the sum, which callers divide market-implied probabilities by.
+    """
+    kinds, total = [], 0.0
+    for m in markets:
+        try:
+            k, _, _ = strike(m)
+        except Exception:
+            return 1.0
+        kinds.append(k)
+        yb, ya, *_ = prices(m)
+        if yb == 0 and ya == 1:
+            return 1.0                       # an unpriced leg makes the sum meaningless
+        total += (yb + ya) / 2
+    has_lo = any(k in ("lt", "le") for k in kinds)
+    has_hi = any(k in ("gt", "ge") for k in kinds)
+    if not (has_lo and has_hi and len(markets) >= 3):
+        return 1.0
+    return total if abs(total - 1) > config.COMPLEMENT_TOL else 1.0
+
+
+def evaluate(fc: Forecast, m, threshold, model_weight=None, mkt_norm=1.0) -> Candidate | None:
     """Best side to buy on this market, or None.
 
     The probability used for edge is a blend of the model and the market's own mid: the market
     encodes information the model lacks (station quirks, settlement source), so the model only
-    earns full weight once calibration shows its odds are honest.
+    earns full weight once calibration shows its odds are honest. `mkt_norm` rescales the
+    market's mid when the event's legs don't sum to 1 (see complement_norm).
     """
     yb, ya, nb, na, vol, spread = prices(m)
     w = config.MODEL_WEIGHT if model_weight is None else model_weight
     p_model = p_yes(fc, m)
-    p_mkt = (yb + ya) / 2 if (yb > 0 or ya < 1) else p_model
+    p_mkt = (yb + ya) / 2 / mkt_norm if (yb > 0 or ya < 1) else p_model
+    p_mkt = min(1.0, max(0.0, p_mkt))
+    fm = floor_margin(fc, m)
+    floor = fm is not None and fm >= config.FLOOR_MARGIN_F and (p_model >= 0.99 or p_model <= 0.01)
+    if floor:
+        # The thermometer has spoken. The market's mid is now mostly settlement-source risk
+        # and stale quotes; trust the observation.
+        w = max(w, config.FLOOR_MODEL_WEIGHT)
     p = w * p_model + (1 - w) * p_mkt
     p = min(config.MODEL_P_CAP, max(1 - config.MODEL_P_CAP, p))
     sat = is_saturated(spread, vol)
-    thr = threshold + (config.SATURATION_PENALTY if sat else 0.0)
+    thr = (config.FLOOR_EDGE if floor else threshold) + (config.SATURATION_PENALTY if sat else 0.0)
     # Extreme prices are where the market has settlement information we lack (and fee
     # drag is worst). Only open inside the tradeable band.
     lo, hi = config.MIN_OPEN_PRICE, config.MAX_OPEN_PRICE
     cands = []
     if lo <= ya <= hi:
         e = p - ya - fee(ya)
-        cands.append(Candidate(m, "yes", p, ya, ya, fee(ya), e, sat, thr))
+        cands.append(Candidate(m, "yes", p, ya, ya, fee(ya), e, sat, thr, floor, direction(m, "yes")))
     if lo <= na <= hi:
         e = (1 - p) - na - fee(na)
-        cands.append(Candidate(m, "no", 1 - p, na, 1 - na, fee(na), e, sat, thr))
+        cands.append(Candidate(m, "no", 1 - p, na, 1 - na, fee(na), e, sat, thr, floor, direction(m, "no")))
     if not cands:
         return None
     best = max(cands, key=lambda c: c.edge)
     return best
 
 
-def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None, model_weight=None):
+def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None, model_weight=None,
+                corr=None, global_budget=None, event_fraction=None):
     """Decide orders for one event. Returns (orders, decisions).
 
     positions: {ticker: signed contracts (+yes, -no)}
     event_spent: dollars already committed to this event
     costs: {ticker: average cost per contract on the held outcome's scale}
+    corr: {'warm': n, 'cold': n} other open events already leaning that way (correlation shrink)
+    global_budget: dollars of new exposure still allowed across all events this cycle (None = no cap)
+    event_fraction: override for MAX_EVENT_FRACTION (day-ahead events get a smaller one)
     """
     costs = costs or {}
+    corr = corr or {}
     orders, decisions = [], []
-    budget = config.MAX_EVENT_FRACTION * bankroll - event_spent
+    ef = config.MAX_EVENT_FRACTION if event_fraction is None else event_fraction
+    budget = ef * bankroll - event_spent
+    floor_budget = config.FLOOR_EVENT_FRACTION * bankroll - event_spent
+    norm = complement_norm(markets)
     cands = []
     for m in markets:
         try:
-            c = evaluate(fc, m, threshold, model_weight)
+            c = evaluate(fc, m, threshold, model_weight, norm)
         except Exception as e:
             log.warning("skip %s: %s", m.get("ticker"), e)
             continue
@@ -187,13 +254,18 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
             reason = "market moved against position; not adding"
         elif c.edge >= c.threshold and (held is None or held == c.outcome):
             target = kelly_contracts(c.p, c.price, bankroll, config.KELLY_FRACTION)
+            if not c.floor and c.direction and corr.get(c.direction, 0) > 0:
+                # Other cities already lean this way today; one synoptic pattern moves them all.
+                target = int(target / math.sqrt(1 + corr[c.direction]))
             count = max(0, target - abs(pos))
             if count > 0:
-                action, reason = "buy", "edge>threshold"
+                action, reason = "buy", ("floor" if c.floor else "edge>threshold")
             else:
                 reason = "at target size"
         else:
             reason = "edge below threshold" if c.edge < c.threshold else "holding other side"
+        if norm != 1.0:
+            reason += f" (legs sum {norm:.2f})"
         decisions.append(dict(ticker=m["ticker"], event_ticker=m.get("event_ticker"),
                               outcome=c.outcome, p_model=round(c.p, 4), price=c.price, fee=c.fee,
                               edge=round(c.edge, 4), threshold=c.threshold, saturated=int(c.saturated),
@@ -203,22 +275,33 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
 
     # Highest edge first, spend the event budget in order. Exits always go through;
     # new buys are limited to the best few strikes since they express the same view.
-    cands.sort(key=lambda t: -t[0].edge)
+    # Floors draw on their own (larger) budget: they are a different kind of risk.
+    cands.sort(key=lambda t: (not t[0].floor, -t[0].edge))
     buys = 0
     for c, count, action in cands:
         if action == "buy":
             already = positions.get(c.m["ticker"], 0) != 0
-            if not already and buys >= config.MAX_MARKETS_PER_EVENT:
+            if not already and buys >= config.MAX_MARKETS_PER_EVENT and not c.floor:
                 continue
-            affordable = int(budget // c.price) if c.price > 0 else 0
+            pool = floor_budget if c.floor else budget
+            if global_budget is not None:
+                pool = min(pool, global_budget)
+            affordable = int(pool // c.price) if c.price > 0 else 0
             count = min(count, affordable)
             if count <= 0:
                 continue
-            budget -= count * c.price
-            if not already:
+            spent = count * c.price
+            if c.floor:
+                floor_budget -= spent
+            else:
+                budget -= spent
+            if global_budget is not None:
+                global_budget -= spent
+            if not already and not c.floor:
                 buys += 1
         yb, ya, *_ = prices(c.m)
         orders.append(dict(ticker=c.m["ticker"], event_ticker=c.m.get("event_ticker"),
                            outcome=c.outcome, count=count, yes_price=c.yes_price,
-                           p_model=c.p, edge=c.edge, action=action, yes_bid=yb, yes_ask=ya))
+                           p_model=c.p, edge=c.edge, action=action, yes_bid=yb, yes_ask=ya,
+                           floor=c.floor, direction=c.direction, spent=count * c.price))
     return orders, decisions

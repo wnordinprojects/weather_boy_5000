@@ -111,3 +111,42 @@ DISCOVER_SERIES = _env("DISCOVER_SERIES", True, bool)
 # Same-day: blend the ensemble's hourly trace with HRRR (3 km, hourly-updating). 0 = ensemble only.
 HRRR_WEIGHT = _env("HRRR_WEIGHT", 0.5, float)
 
+# ---- Floor trades ---------------------------------------------------------
+# A "floor" trade: the thermometer has already passed the strike by at least this margin (deg F),
+# so the market is decided unless the settlement source disagrees with the live obs. These get
+# their own model weight (the market's price carries little information once the day is decided)
+# and their own event budget.
+FLOOR_MARGIN_F = _env("FLOOR_MARGIN_F", 2.0, float)
+FLOOR_MODEL_WEIGHT = _env("FLOOR_MODEL_WEIGHT", 0.85, float)
+FLOOR_EVENT_FRACTION = _env("FLOOR_EVENT_FRACTION", 0.35, float)
+# Floors are priced in the 90s where fee drag is tiny; a smaller net edge is still worth taking.
+FLOOR_EDGE = _env("FLOOR_EDGE", 0.02, float)
+
+# ---- Cadence --------------------------------------------------------------
+# Poll faster while any station is in its afternoon peak window (local hours FAST_START..FAST_END).
+CYCLE_SECONDS_FAST = _env("CYCLE_SECONDS_FAST", 120, int)
+FAST_START_HOUR = _env("FAST_START_HOUR", 12, int)
+FAST_END_HOUR = _env("FAST_END_HOUR", 17, int)
+# Reuse downloaded model runs for this long (seconds); observations are always fetched fresh.
+MODEL_CACHE_S = _env("MODEL_CACHE_S", 900, int)
+
+# ---- Complement check -----------------------------------------------------
+# When an event's strikes partition the outcome space, their mids should sum to ~1. If they don't,
+# normalize the market-implied probability before blending (a cheap combined book means every
+# leg is underpriced). Only applied when the sum is off by more than this.
+COMPLEMENT_TOL = _env("COMPLEMENT_TOL", 0.05, float)
+
+# ---- Day-ahead ------------------------------------------------------------
+# Trade tomorrow's event for a station once its history calibration is good enough:
+# at least this many fitted days and a daily-extreme residual sd at or below this (deg F).
+DAY_AHEAD_AUTO = _env("DAY_AHEAD_AUTO", True, bool)
+DAY_AHEAD_MIN_N = _env("DAY_AHEAD_MIN_N", 20, int)
+DAY_AHEAD_MAX_SD = _env("DAY_AHEAD_MAX_SD", 2.5, float)
+DAY_AHEAD_EVENT_FRACTION = _env("DAY_AHEAD_EVENT_FRACTION", 0.10, float)
+
+# ---- Correlation-aware sizing ----------------------------------------------
+# Same-direction bets (long warm / long cold) across cities on one day move together under a
+# synoptic pattern. Kelly size is divided by sqrt(1 + n other open events in the same direction),
+# and total open exposure is capped at this fraction of equity.
+MAX_TOTAL_EXPOSURE = _env("MAX_TOTAL_EXPOSURE", 0.7, float)
+
