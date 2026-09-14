@@ -44,6 +44,7 @@ class Agent:
         self.errors = 0
         self.halted = False
         self.threshold = self.db.get_state("edge_threshold", config.EDGE_THRESHOLD)
+        self.model_weight = self.db.get_state("model_weight", config.MODEL_WEIGHT)
         self.active_series = list(config.SERIES)
         self.last_status = {}
 
@@ -128,7 +129,7 @@ class Agent:
                     self.db.skip(ticker=ev["event_ticker"], outcome="", reason=f"station mismatch CLI{cli.group(1)} vs {meta['station']}")
                     continue
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
-                                                event_spent.get(ev["event_ticker"], 0.0), costs)
+                                                event_spent.get(ev["event_ticker"], 0.0), costs, self.model_weight)
                 for d in decisions:
                     self.db.decision(cycle_id=cycle_id, series=series, **d)
                 for o in orders:
@@ -140,7 +141,7 @@ class Agent:
                           (n_markets, n_orders, f"{time.time()-t0:.1f}s", cycle_id))
         self.db.c.commit()
         self.last_status = dict(ts=time.time(), balance=bankroll, markets=n_markets, orders=n_orders,
-                                threshold=self.threshold, halted=self.halted)
+                                threshold=self.threshold, model_weight=self.model_weight, halted=self.halted)
         log.info("cycle done: balance %.2f markets %d orders %d thr %.3f", bankroll, n_markets, n_orders, self.threshold)
 
     def execute(self, o, series):
@@ -234,6 +235,14 @@ class Agent:
                 thr -= 0.005
             self.threshold = float(min(config.EDGE_MAX, max(config.EDGE_MIN, thr)))
             self.db.set_state("edge_threshold", self.threshold)
+        # Model weight: does the model's stated probability match realized hit rate?
+        # Calibration error = mean |p_model - hit| over recent settlements. Good (<0.15) earns trust.
+        if len(recent) >= 10:
+            err = float(np.mean([abs(r["p_model"] - (1.0 if r["outcome"] == r["result"] else 0.0)) for r in recent]))
+            w = self.model_weight + (0.05 if err < 0.15 else -0.05 if err > 0.3 else 0.0)
+            self.model_weight = float(min(config.MODEL_WEIGHT_MAX, max(config.MODEL_WEIGHT_MIN, w)))
+            self.db.set_state("model_weight", self.model_weight)
+            log.info("calibration error %.2f -> model weight %.2f", err, self.model_weight)
         for series in list(config.SERIES):
             rs = self.db.recent_settlements(series, config.ROTATION_WINDOW)
             if len(rs) >= config.ROTATION_WINDOW and sum(r["pnl"] for r in rs) < 0 and not self.db.benched(series):

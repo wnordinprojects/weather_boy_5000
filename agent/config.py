@@ -43,6 +43,10 @@ KELLY_FRACTION = _env("KELLY_FRACTION", 0.5, float)
 MAX_EVENT_FRACTION = _env("MAX_EVENT_FRACTION", 0.25, float)
 # Strikes on one city-day are near-perfectly correlated for a nowcast: take at most this many.
 MAX_MARKETS_PER_EVENT = _env("MAX_MARKETS_PER_EVENT", 2, int)
+# Weight on the model's probability vs the market's implied probability when computing edge.
+# 0.5 = trust them equally. Rises automatically as calibration proves the model (see adapt()).
+MODEL_WEIGHT = _env("MODEL_WEIGHT", 0.5, float)
+MODEL_WEIGHT_MIN, MODEL_WEIGHT_MAX = 0.3, 0.9
 # Never let the model claim certainty. Settlement source (TWC) can differ from NWS obs by a degree.
 MODEL_P_CAP = _env("MODEL_P_CAP", 0.97, float)
 # How many days ahead to trade. 0 = same-day only (live observations are the edge).

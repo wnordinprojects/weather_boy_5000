@@ -69,25 +69,25 @@ def test_plan_orders_buys_best_side_and_respects_event_budget():
                yes_bid_dollars="0.50", yes_ask_dollars="0.55", no_bid_dollars="0.45", no_ask_dollars="0.50", volume_24h_fp="10"),
           dict(ticker="E-T95", event_ticker="E", strike_type="greater", floor_strike=94.5,
                yes_bid_dollars="0.30", yes_ask_dollars="0.35", no_bid_dollars="0.65", no_ask_dollars="0.70", volume_24h_fp="10")]
-    orders, decisions = strategy.plan_orders(fc, ms, bankroll=1000, positions={}, threshold=0.06, event_spent=0)
+    orders, decisions = strategy.plan_orders(fc, ms, bankroll=1000, positions={}, threshold=0.06, event_spent=0, model_weight=1.0)
     by = {o["ticker"]: o for o in orders}
     assert by["E-T85"]["outcome"] == "yes" and by["E-T85"]["yes_price"] == 0.55          # buy yes at ask
     assert by["E-T95"]["outcome"] == "no" and by["E-T95"]["yes_price"] == pytest.approx(0.30)  # buy no at 1 - no_ask
     spent = sum(o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"]) for o in orders)
     assert spent <= config.MAX_EVENT_FRACTION * 1000 + 1e-9
     # small bankroll: the best strike eats the whole event budget, second gets nothing
-    orders_small, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms, bankroll=100, positions={}, threshold=0.06, event_spent=0)
+    orders_small, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms, bankroll=100, positions={}, threshold=0.06, event_spent=0, model_weight=1.0)
     assert len(orders_small) == 1 and orders_small[0]["count"] * orders_small[0]["yes_price"] <= 25 + 1e-9
     # never more than MAX_MARKETS_PER_EVENT new strikes per event
     ms3 = ms + [dict(ticker="E-T88", event_ticker="E", strike_type="greater", floor_strike=88.5,
                      yes_bid_dollars="0.50", yes_ask_dollars="0.56", no_bid_dollars="0.44", no_ask_dollars="0.50", volume_24h_fp="10")]
-    orders3, _ = strategy.plan_orders(fc, ms3, bankroll=10000, positions={}, threshold=0.06, event_spent=0)
+    orders3, _ = strategy.plan_orders(fc, ms3, bankroll=10000, positions={}, threshold=0.06, event_spent=0, model_weight=1.0)
     assert len(orders3) == config.MAX_MARKETS_PER_EVENT
     # already at size -> no order
-    orders2, _ = strategy.plan_orders(fc, ms[:1], 100, {"E-T85": 500}, 0.06, 0)
+    orders2, _ = strategy.plan_orders(fc, ms[:1], 100, {"E-T85": 500}, 0.06, 0, model_weight=1.0)
     assert orders2 == []
     # holding the wrong side with a big reversed edge -> exit
-    orders3, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms[:1], 100, {"E-T85": -10}, 0.06, 0)
+    orders3, _ = strategy.plan_orders(_fc([90] * 9 + [80]), ms[:1], 100, {"E-T85": -10}, 0.06, 0, model_weight=1.0)
     assert orders3 and orders3[0]["action"] == "exit" and orders3[0]["outcome"] == "yes" and orders3[0]["count"] == 10
 
 
@@ -133,9 +133,9 @@ def test_no_averaging_down():
     fc = _fc([90] * 9 + [80])
     m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
              yes_bid_dollars="0.20", yes_ask_dollars="0.22", no_bid_dollars="0.78", no_ask_dollars="0.80", volume_24h_fp="10")
-    orders, dec = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.55})
+    orders, dec = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.55}, model_weight=1.0)
     assert orders == [] and "not adding" in dec[0]["reason"]
-    orders, _ = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.25})
+    orders, _ = strategy.plan_orders(fc, [m], 100, {"E-T85": 10}, 0.06, 0, costs={"E-T85": 0.25}, model_weight=1.0)
     assert orders and orders[0]["action"] == "buy"
 
 
@@ -157,11 +157,23 @@ def test_noise_cannot_cross_observed_floor():
     assert fut_low.min() < 58            # evening cooling below the dawn low is still in play
 
 
+def test_market_blend_tames_overconfidence():
+    """Model 57% vs market 8c: blended 32%, edge ~23 -> still trades but far smaller; at 0.3 weight, no trade."""
+    fc = _fc([56] * 57 + [60] * 43)
+    m = dict(ticker="C-T57", event_ticker="C", strike_type="less", cap_strike=57,
+             yes_bid_dollars="0.02", yes_ask_dollars="0.08", no_bid_dollars="0.92", no_ask_dollars="0.98", volume_24h_fp="500")
+    full = strategy.evaluate(fc, m, 0.06, model_weight=1.0)
+    half = strategy.evaluate(fc, m, 0.06, model_weight=0.5)
+    low = strategy.evaluate(fc, m, 0.06, model_weight=0.3)
+    assert full.p > half.p > low.p
+    assert strategy.kelly_contracts(half.p, 0.08, 100, 0.5) < strategy.kelly_contracts(full.p, 0.08, 100, 0.5) / 2
+
+
 def test_saturation_raises_threshold():
     fc = _fc([90] * 9 + [80])
     m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
              yes_bid_dollars="0.80", yes_ask_dollars="0.81", no_bid_dollars="0.19", no_ask_dollars="0.20", volume_24h_fp="50000")
-    c = strategy.evaluate(fc, m, 0.06)
+    c = strategy.evaluate(fc, m, 0.06, model_weight=1.0)
     assert c.saturated and c.threshold == pytest.approx(0.09)
 
 
@@ -218,7 +230,7 @@ def test_station_mismatch_skips_event(monkeypatch):
     monkeypatch.setattr(A, "datetime", _FixedDT)
     ag = A.Agent.__new__(A.Agent)
     ag.k, ag.db, ag.http, ag.errors, ag.halted = k, DB(), None, 0, False
-    ag.threshold, ag.active_series, ag.last_status = 0.06, ["KXHIGHAUS"], {}
+    ag.threshold, ag.active_series, ag.last_status, ag.model_weight = 0.06, ["KXHIGHAUS"], {}, 1.0
     ag.cycle()
     assert not k.place.called
 
@@ -242,7 +254,7 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     monkeypatch.setattr(A, "datetime", _FixedDT)
     ag = A.Agent.__new__(A.Agent)
     ag.k, ag.db, ag.http, ag.errors, ag.halted = k, db, None, 0, False
-    ag.threshold, ag.active_series, ag.last_status = 0.06, ["KXHIGHNY"], {}
+    ag.threshold, ag.active_series, ag.last_status, ag.model_weight = 0.06, ["KXHIGHNY"], {}, 1.0
     ag.cycle()
     assert k.place.called
     args = k.place.call_args[0]

@@ -95,7 +95,8 @@ class Api:
         today = self.db.rows("SELECT COALESCE(SUM(pnl),0) p FROM settlements WHERE ts > ?", (time.time() - 86400,))[0]["p"]
         return dict(
             mode="DRY RUN" if config.DRY_RUN else ("HALTED" if self.a.halted else "LIVE"),
-            threshold=self.a.threshold, last_cycle_ts=st.get("ts"), cycle_seconds=config.CYCLE_SECONDS,
+            threshold=self.a.threshold, model_weight=getattr(self.a, "model_weight", config.MODEL_WEIGHT),
+            last_cycle_ts=st.get("ts"), cycle_seconds=config.CYCLE_SECONDS,
             days_ahead=config.DAYS_AHEAD, now=time.time(), display_mult=config.DISPLAY_MULT,
             # money
             start_equity=round(start, 2), balance=round(cash, 2), exposure=round(exposure, 2),

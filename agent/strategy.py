@@ -126,10 +126,19 @@ class Candidate:
     threshold: float
 
 
-def evaluate(fc: Forecast, m, threshold) -> Candidate | None:
-    """Best side to buy on this market, or None."""
+def evaluate(fc: Forecast, m, threshold, model_weight=None) -> Candidate | None:
+    """Best side to buy on this market, or None.
+
+    The probability used for edge is a blend of the model and the market's own mid: the market
+    encodes information the model lacks (station quirks, settlement source), so the model only
+    earns full weight once calibration shows its odds are honest.
+    """
     yb, ya, nb, na, vol, spread = prices(m)
-    p = min(config.MODEL_P_CAP, max(1 - config.MODEL_P_CAP, p_yes(fc, m)))
+    w = config.MODEL_WEIGHT if model_weight is None else model_weight
+    p_model = p_yes(fc, m)
+    p_mkt = (yb + ya) / 2 if (yb > 0 or ya < 1) else p_model
+    p = w * p_model + (1 - w) * p_mkt
+    p = min(config.MODEL_P_CAP, max(1 - config.MODEL_P_CAP, p))
     sat = is_saturated(spread, vol)
     thr = threshold + (config.SATURATION_PENALTY if sat else 0.0)
     # Extreme prices are where the market has settlement information we lack (and fee
@@ -148,7 +157,7 @@ def evaluate(fc: Forecast, m, threshold) -> Candidate | None:
     return best
 
 
-def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None):
+def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None, model_weight=None):
     """Decide orders for one event. Returns (orders, decisions).
 
     positions: {ticker: signed contracts (+yes, -no)}
@@ -161,7 +170,7 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
     cands = []
     for m in markets:
         try:
-            c = evaluate(fc, m, threshold)
+            c = evaluate(fc, m, threshold, model_weight)
         except Exception as e:
             log.warning("skip %s: %s", m.get("ticker"), e)
             continue
