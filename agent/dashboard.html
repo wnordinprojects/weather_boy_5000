@@ -31,7 +31,7 @@
   header h1 .word { font-family:"Newsreader", Georgia, serif; font-size:34px; font-weight:500; letter-spacing:-.01em; line-height:1.05; }
   header h1 .word span { color:var(--dn); }
   header h1 .tag { display:block; font-family:"IBM Plex Sans", sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin-top:4px; }
-  #bigfrog { width:158px; height:132px; display:block; }
+  #bigfrog { width:184px; height:154px; display:block; }
   #bigfrog .ring { transform-origin:center; transform-box:fill-box; animation:hypno 3.2s ease-in-out infinite; }
   #bigfrog .ring2 { animation-delay:-1.6s; }
   @keyframes hypno { 0%,100% { transform:scale(.55); opacity:.15 } 50% { transform:scale(1); opacity:.9 } }
@@ -56,6 +56,11 @@
   @keyframes spark { 0% { opacity:0; transform:scale(.2) } 40% { opacity:1; transform:scale(1.1) } 100% { opacity:0; transform:scale(1.6) } }
   #bigfrog.happy .ring { stroke:#2fd36b !important; } #bigfrog.sad .ring { stroke:#6aa4ff !important; }
   #bigfrog.sad .mouth { d:path("M40 62 q26 -14 52 0"); } #bigfrog.sad .lips { opacity:0; }
+  #bigfrog .grin { opacity:0; transform-origin:66px 60px; transform-box:view-box; }
+  #bigfrog.happy .grin { opacity:1; animation:manic .12s steps(2) infinite; }
+  #bigfrog.happy .mouth, #bigfrog.happy .lips { opacity:0; }
+  #bigfrog.happy .pupil circle { animation-duration:.6s, .25s; }
+  @keyframes manic { 0% { transform:scale(1,1) rotate(-2deg) } 100% { transform:scale(1.04,1.08) rotate(2deg) } }
   #bigfrog .tear { opacity:0; } #bigfrog.sad .tear { animation:tear 1.6s ease-in 1; }
   @keyframes tear { 0% { opacity:0; transform:translateY(0) } 20% { opacity:1 } 100% { opacity:0; transform:translateY(22px) } }
   #bigfrog.blink .lid { animation:lid .35s ease-in-out; } @keyframes lid { 0%,100% { transform:scaleY(0) } 50% { transform:scaleY(1) } }
@@ -210,6 +215,23 @@
         <rect class="lid" x="27" y="23" width="34" height="22" rx="11" fill="#a8c47f"/><rect class="lid" x="71" y="23" width="34" height="22" rx="11" fill="#a8c47f"/>
         <path class="mouth" d="M40 58 q26 18 52 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
         <path class="lips" d="M40 58 q26 18 52 0 q-26 6 -52 0 z" fill="#c9565a" opacity=".8"/>
+        <g class="grin">
+          <clipPath id="teethTop"><path d="M30 53 q36 8 72 0 q-36 16 -72 0 z"/></clipPath>
+          <clipPath id="teethBot"><path d="M44 66 q22 -6 44 0 q-22 7 -44 0 z"/></clipPath>
+          <path d="M26 51 q40 44 80 0 q-40 10 -80 0 z" fill="#2a2620"/>
+          <path d="M26 51 q40 44 80 0 q-40 10 -80 0 z" fill="#c9565a" opacity=".5"/>
+          <g clip-path="url(#teethTop)">
+            <rect x="28" y="50" width="76" height="22" fill="#ffffff"/>
+            <path d="M38 50 v22 M45 50 v22 M52 50 v22 M59 50 v22 M66 50 v22 M73 50 v22 M80 50 v22 M87 50 v22 M94 50 v22" stroke="#2a2620" stroke-width="1"/>
+          </g>
+          <path d="M30 53 q36 8 72 0 q-36 16 -72 0 z" fill="none" stroke="#2a2620" stroke-width="1.2"/>
+          <g clip-path="url(#teethBot)">
+            <rect x="42" y="58" width="48" height="14" fill="#ffffff"/>
+            <path d="M52 58 v14 M59 58 v14 M66 58 v14 M73 58 v14 M80 58 v14" stroke="#2a2620" stroke-width="1"/>
+          </g>
+          <path d="M44 66 q22 -6 44 0 q-22 7 -44 0 z" fill="none" stroke="#2a2620" stroke-width="1.2"/>
+          <path d="M26 51 q40 44 80 0" fill="none" stroke="#2a2620" stroke-width="2.5" stroke-linecap="round"/>
+        </g>
         <ellipse class="tear" cx="36" cy="48" rx="2.5" ry="4" fill="#6aa4ff"/><ellipse class="tear" cx="96" cy="48" rx="2.5" ry="4" fill="#6aa4ff"/>
         <circle cx="30" cy="62" r="4" fill="#e9a5a0" opacity=".7"/><circle cx="102" cy="62" r="4" fill="#e9a5a0" opacity=".7"/>
         <circle cx="58" cy="76" r="2" fill="#6f8e4c"/><circle cx="78" cy="70" r="2" fill="#6f8e4c"/><circle cx="96" cy="80" r="1.6" fill="#6f8e4c"/>
