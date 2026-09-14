@@ -35,6 +35,7 @@ MIGRATIONS = [
     "ALTER TABLE forecasts ADD COLUMN fan_json TEXT",
     "ALTER TABLE forecasts ADD COLUMN obs_json TEXT",
     "ALTER TABLE forecasts ADD COLUMN pct_json TEXT",
+    "ALTER TABLE orders ADD COLUMN status TEXT",
 ]
 
 
@@ -97,6 +98,17 @@ class DB:
     # reads -----------------------------------------------------------------
     def open_order_tickers(self):
         return {r["ticker"] for r in self.c.execute("SELECT DISTINCT ticker FROM orders WHERE fill_count > 0")}
+
+    def open_orders(self, since_s=86400):
+        return [dict(r) for r in self.c.execute(
+            "SELECT * FROM orders WHERE order_id NOT IN ('dry','ERR') AND order_id IS NOT NULL "
+            "AND (status IS NULL OR status='resting') AND ts > ?", (time.time() - since_s,))]
+
+    def update_order(self, order_id, fill_count, avg_fill, status):
+        with self.lock:
+            self.c.execute("UPDATE orders SET fill_count=?, avg_fill=COALESCE(?, avg_fill), status=? WHERE order_id=?",
+                           (fill_count, avg_fill, status, order_id))
+            self.c.commit()
 
     def order_history(self, ticker):
         return [dict(r) for r in self.c.execute(

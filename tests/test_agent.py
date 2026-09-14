@@ -169,6 +169,69 @@ def test_market_blend_tames_overconfidence():
     assert strategy.kelly_contracts(half.p, 0.08, 100, 0.5) < strategy.kelly_contracts(full.p, 0.08, 100, 0.5) / 2
 
 
+def test_tight_spread_takes_the_ask(monkeypatch):
+    from agent import agent as A
+    k = mock.Mock()
+    k.exchange_status.return_value = {"trading_active": True}
+    k.balance.return_value = 100.0
+    k.positions.return_value = []
+    k.resting.return_value = []
+    ev = {"event_ticker": "KXHIGHNY-26SEP13", "markets": [
+        dict(ticker="KXHIGHNY-26SEP13-T85", event_ticker="KXHIGHNY-26SEP13", status="open", strike_type="greater",
+             floor_strike=84.5, yes_bid_dollars="0.44", yes_ask_dollars="0.45", no_bid_dollars="0.55",
+             no_ask_dollars="0.56", volume_24h_fp="100", rules_primary="New York City (CLINYC)")]}
+    k.events.side_effect = lambda s, **kw: [ev] if s == "KXHIGHNY" else []
+    k.place.return_value = {"order_id": "o2", "fill_count": "3.00", "average_fill_price": "0.45"}
+    k.orderbook.return_value = {"yes_dollars": [["0.44", "50.00"]], "no_dollars": [["0.55", "3.00"]]}
+    monkeypatch.setattr(A, "build_forecast", lambda *a, **kw: _fc([90] * 9 + [80]))
+    monkeypatch.setattr(A, "datetime", _FixedDT)
+    ag = A.Agent.__new__(A.Agent)
+    ag.k, ag.db, ag.http, ag.errors, ag.halted = k, DB(), None, 0, False
+    ag.threshold, ag.active_series, ag.last_status, ag.model_weight = 0.06, ["KXHIGHNY"], {}, 1.0
+    ag.cycle()
+    args, kw = k.place.call_args
+    assert args[3] == 0.45 and args[2] == 3 and kw["tif"] == "immediate_or_cancel"
+
+
+def test_low_markets_wait_for_evening(monkeypatch):
+    from agent import agent as A
+    k = mock.Mock()
+    k.exchange_status.return_value = {"trading_active": True}
+    k.balance.return_value = 100.0
+    k.positions.return_value = []
+    k.resting.return_value = []
+    ev = {"event_ticker": "KXLOWTCHI-26SEP13", "markets": [
+        dict(ticker="KXLOWTCHI-26SEP13-T57", event_ticker="KXLOWTCHI-26SEP13", status="open", strike_type="less",
+             cap_strike=57, yes_bid_dollars="0.02", yes_ask_dollars="0.08", no_bid_dollars="0.92",
+             no_ask_dollars="0.98", volume_24h_fp="500", rules_primary="Chicago (CLIMDW)")]}
+    k.events.side_effect = lambda s, **kw: [ev] if s == "KXLOWTCHI" else []
+    monkeypatch.setattr(A, "build_forecast", lambda *a, **kw: _fc([55] * 9 + [60], kind="low"))
+    monkeypatch.setattr(A, "datetime", _FixedDT)      # noon local
+    ag = A.Agent.__new__(A.Agent)
+    ag.k, ag.db, ag.http, ag.errors, ag.halted = k, DB(os.path.join(tempfile.mkdtemp(), "l.db")), None, 0, False
+    ag.threshold, ag.active_series, ag.last_status, ag.model_weight = 0.06, ["KXLOWTCHI"], {}, 1.0
+    ag.cycle()
+    assert not k.place.called
+    d = ag.db.rows("SELECT action, reason FROM decisions")[0]
+    assert d["action"] == "hold" and "lows open after" in d["reason"]
+
+
+def test_history_fit_measures_evening_bias():
+    from agent import history
+    prev, obs = {}, []
+    for d in range(12):
+        day = date(2026, 8, 1) + __import__("datetime").timedelta(days=d)
+        fc = [60 + (h if h < 14 else 28 - h) for h in range(24)]        # model: cools fast at night
+        prev[day.isoformat()] = fc
+        for h in range(24):
+            actual = fc[h] + (2.0 if h >= 17 else 0.0) + 0.5           # station stays 2F warmer in the evening
+            obs.append((datetime(day.year, day.month, day.day, h, 30), actual))
+    r = history.fit(prev, obs)
+    assert r and r["n"] == 12
+    assert 1.8 < r["evening_bias"] < 2.7
+    assert 0.3 < r["high_bias"] < 0.7 and 0.3 < r["low_bias"] < 2.6
+
+
 def test_saturation_raises_threshold():
     fc = _fc([90] * 9 + [80])
     m = dict(ticker="E-T85", event_ticker="E", strike_type="greater", floor_strike=84.5,
@@ -221,6 +284,7 @@ def test_station_mismatch_skips_event(monkeypatch):
     k.exchange_status.return_value = {"trading_active": True}
     k.balance.return_value = 100.0
     k.positions.return_value = []
+    k.resting.return_value = []
     ev = {"event_ticker": "KXHIGHAUS-26SEP13", "markets": [
         dict(ticker="KXHIGHAUS-26SEP13-T99", event_ticker="KXHIGHAUS-26SEP13", status="open", strike_type="greater",
              floor_strike=99, yes_bid_dollars="0.40", yes_ask_dollars="0.45", no_bid_dollars="0.55",
@@ -237,11 +301,12 @@ def test_station_mismatch_skips_event(monkeypatch):
 
 def test_full_cycle_with_mocked_kalshi(monkeypatch):
     from agent import agent as A
-    db = DB()
+    db = DB(os.path.join(tempfile.mkdtemp(), "f.db"))
     k = mock.Mock()
     k.exchange_status.return_value = {"trading_active": True}
     k.balance.return_value = 100.0
     k.positions.return_value = []
+    k.resting.return_value = []
     ev = {"event_ticker": "KXHIGHNY-26SEP13", "markets": [
         dict(ticker="KXHIGHNY-26SEP13-T85", event_ticker="KXHIGHNY-26SEP13", status="open", strike_type="greater",
              floor_strike=84.5, yes_bid_dollars="0.40", yes_ask_dollars="0.45", no_bid_dollars="0.55",
@@ -258,8 +323,9 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     ag.cycle()
     assert k.place.called
     args = k.place.call_args[0]
-    assert args[0] == "KXHIGHNY-26SEP13-T85" and args[1] == "yes" and args[3] == 0.45
-    assert args[2] == 5   # capped to book depth (5 NO bids at 0.55)
+    assert args[0] == "KXHIGHNY-26SEP13-T85" and args[1] == "yes"
+    assert abs(args[3] - 0.425) <= 0.006          # rested at mid, not taken at the 0.45 ask
+    assert k.place.call_args[1]["tif"] == "good_till_canceled" and k.place.call_args[1]["expire_s"] == config.MAKER_TTL
     assert db.rows("SELECT COUNT(*) n FROM orders")[0]["n"] == 1
     # settlement
     k.market.return_value = {"status": "settled", "result": "yes"}

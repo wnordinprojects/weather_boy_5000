@@ -52,6 +52,9 @@ MODEL_P_CAP = _env("MODEL_P_CAP", 0.97, float)
 # How many days ahead to trade. 0 = same-day only (live observations are the edge).
 # Raise to 1-2 once per-station calibration has a week of data.
 DAYS_AHEAD = _env("DAYS_AHEAD", 0, int)
+# Low-temperature markets: only open new positions after this local hour. A calendar-day low is
+# decided by the evening cooling curve, which is only visible late; afternoon bets on it lost all day one.
+LOW_TRADE_AFTER_HOUR = _env("LOW_TRADE_AFTER_HOUR", 20, int)
 # Only open positions priced inside this band. A liquid 1c or 99c market that disagrees
 # with the model usually knows something about settlement that the model does not.
 MIN_OPEN_PRICE = _env("MIN_OPEN_PRICE", 0.03, float)
@@ -60,6 +63,10 @@ MAX_OPEN_PRICE = _env("MAX_OPEN_PRICE", 0.97, float)
 ADD_DRAWDOWN = _env("ADD_DRAWDOWN", 0.6, float)
 # Reverse an open position when model edge flips against it by this much.
 EXIT_EDGE = _env("EXIT_EDGE", 0.15, float)
+# Execution: when the spread is wider than this, rest a limit order at mid instead of taking the ask.
+MAKER_SPREAD = _env("MAKER_SPREAD", 0.02, float)
+# How long a resting order lives before the exchange cancels it (seconds). Keep under 2 cycles.
+MAKER_TTL = _env("MAKER_TTL", 900, int)
 # Taker fee estimate: Kalshi charges ~0.07 * p * (1-p) per contract on most series.
 FEE_RATE = _env("FEE_RATE", 0.07, float)
 # Bench a series for this many days if its realized edge over the last N trades is negative.

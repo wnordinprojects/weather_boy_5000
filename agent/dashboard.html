@@ -440,7 +440,7 @@ let lastOrderKey = null;
 function activity(a){
   const items = [];
   a.orders.forEach(o=>{ const price = o.outcome==='yes'?o.yes_price:1-o.yes_price;
-    const filled = o.order_id==='dry' ? 'Would have bought' : (o.fill_count>0 ? 'Bought' : 'Tried to buy');
+    const filled = o.order_id==='dry' ? 'Would have bought' : (o.fill_count>=o.count ? 'Bought' : o.fill_count>0 ? 'Partly bought' : o.status==='resting' ? 'Waiting to buy' : 'Tried to buy');
     items.push({ts:o.ts, html:`${filled} <b>${o.outcome.toUpperCase()}</b> ${esc(nameOf(o.ticker))} ×${o.fill_count>0?Math.round(o.fill_count):o.count} at ${cents(price)}. <span class="mut">Model ${pct(o.p_model)}, edge ${(o.edge*100).toFixed(0)}.</span>`}); });
   a.skips.forEach(s=>items.push({ts:s.ts, html:`<span class="mut">Wanted <b>${(s.outcome||'').toUpperCase()}</b> ${esc(nameOf(s.ticker))}. Skipped: ${esc(s.reason)}.</span>`}));
   items.sort((p,q)=>q.ts-p.ts);

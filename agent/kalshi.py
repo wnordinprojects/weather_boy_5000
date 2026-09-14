@@ -144,7 +144,13 @@ class Kalshi:
         return self._req("DELETE", "/portfolio/orders")
 
     # -- trading ------------------------------------------------------------
-    def place(self, ticker, outcome, count, yes_price, tif="immediate_or_cancel"):
+    def order(self, order_id):
+        return self._req("GET", f"/portfolio/orders/{order_id}").get("order", {})
+
+    def resting(self):
+        return self._paged("/portfolio/orders", "orders", dict(status="resting", limit=200))
+
+    def place(self, ticker, outcome, count, yes_price, tif="immediate_or_cancel", expire_s=None):
         """Buy `count` contracts of `outcome` ('yes'|'no').
 
         V2 single book: price is always on the YES scale.
@@ -163,6 +169,8 @@ class Kalshi:
             client_order_id=str(uuid.uuid4()),
             post_only=False,
         )
+        if expire_s and tif == "good_till_canceled":
+            body["expiration_time"] = int(time.time()) + int(expire_s)
         if config.DRY_RUN:
             log.info("DRY_RUN order %s", body)
             return dict(order_id="dry", fill_count="0.00", remaining_count=body["count"], dry_run=True)

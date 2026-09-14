@@ -204,7 +204,7 @@ class Api:
                     bias=bias, benched=bench, threshold=self.a.threshold)
 
     def activity(self):
-        orders = self.db.rows("SELECT ts,ticker,outcome,count,yes_price,p_model,edge,fill_count,avg_fill,order_id "
+        orders = self.db.rows("SELECT ts,ticker,outcome,count,yes_price,p_model,edge,fill_count,avg_fill,order_id,status "
                               "FROM orders ORDER BY id DESC LIMIT 50")
         skips = self.db.rows("SELECT ts,ticker,outcome,reason FROM skips ORDER BY id DESC LIMIT 50")
         passes = self.db.rows("SELECT ts,ticker,outcome,p_model,price,edge,threshold,reason FROM decisions "

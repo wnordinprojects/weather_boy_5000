@@ -161,7 +161,8 @@ def observed_extreme(obs, target: date, tz, kind):
 
 # --------------------------------------------------------------------------
 def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
-                   now=None) -> Forecast:
+                   now=None, cal=None) -> Forecast:
+    """`cal` is the station's history calibration (history.station_calibration) or None."""
     meta = config.SERIES[series]
     z = ZoneInfo(meta["tz"])
     local_now = (now or datetime.now(z)).astimezone(z)
@@ -171,11 +172,20 @@ def build_forecast(series, target: date, kind: str, bias_f: float, session=None,
     hourly = ensemble_hourly(payload, target)
     if hourly.size == 0:
         raise RuntimeError(f"no ensemble data for {series} {target}")
+    if cal and cal.get("evening_bias") is not None:
+        # Learned nighttime error at this station (grid cell vs sensor, urban heat, etc.).
+        hourly = hourly.copy()
+        hourly[:, 17:] += cal["evening_bias"]
+        notes.append(f"evening bias {cal['evening_bias']:+.1f}F")
     members = np.nanmax(hourly, axis=1) if kind == "high" else np.nanmin(hourly, axis=1)
     rng = np.random.default_rng(int(target.strftime("%Y%m%d")))
     reps = max(1, 2000 // members.size)
     sign = 1 if kind == "high" else -1
     station_sd = config.STATION_ERROR_F
+    if cal:
+        sd_key = "high_sd" if kind == "high" else "low_sd"
+        station_sd = float(min(3.0, max(0.8, cal.get(sd_key, station_sd))))
+        bias_f = cal.get("high_bias" if kind == "high" else "low_bias", bias_f) * sign  # oriented below
 
     fan = np.nanpercentile(hourly, [10, 50, 90], axis=0).T.round(1).tolist() if hourly.shape[1] else []
     obs_trace = []

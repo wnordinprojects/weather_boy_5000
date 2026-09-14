@@ -217,7 +217,8 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
             budget -= count * c.price
             if not already:
                 buys += 1
+        yb, ya, *_ = prices(c.m)
         orders.append(dict(ticker=c.m["ticker"], event_ticker=c.m.get("event_ticker"),
                            outcome=c.outcome, count=count, yes_price=c.yes_price,
-                           p_model=c.p, edge=c.edge, action=action))
+                           p_model=c.p, edge=c.edge, action=action, yes_bid=yb, yes_ask=ya))
     return orders, decisions
