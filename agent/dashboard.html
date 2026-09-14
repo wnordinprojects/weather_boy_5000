@@ -29,9 +29,14 @@
   header { display:flex; align-items:center; gap:32px; position:relative; flex-wrap:wrap; }
   header h1 { margin:0; display:flex; align-items:center; gap:16px; }
   header h1 .word { font-family:"Newsreader", Georgia, serif; font-size:34px; font-weight:500; letter-spacing:-.01em; line-height:1.05; }
-  header h1 .word span { background:linear-gradient(90deg,#e3170a,#ff8a1f,#ffd23f,#2fd36b,#6aa4ff,#a86bff,#e3170a); background-size:300% 100%;
-    -webkit-background-clip:text; background-clip:text; color:transparent; animation:rainbow 2.4s ease-out 3 forwards; }
-  @keyframes rainbow { from { background-position:0% 50% } to { background-position:300% 50% } }
+  /* Three passes of rainbow, then the last quarter of the gradient is solid ink: it parks black. */
+  header h1 .word span { background:linear-gradient(90deg,
+      #e3170a 0%,#ff8a1f 4%,#ffd23f 8%,#2fd36b 12%,#6aa4ff 16%,#a86bff 20%,#e3170a 25%,
+      #ff8a1f 29%,#ffd23f 33%,#2fd36b 37%,#6aa4ff 41%,#a86bff 45%,#e3170a 50%,
+      #ff8a1f 54%,#ffd23f 58%,#2fd36b 62%,#6aa4ff 66%,#a86bff 70%,#2a2620 75%,#2a2620 100%);
+    background-size:400% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:rainbow 7s linear 1 forwards; }
+  @keyframes rainbow { from { background-position:0% 50% } to { background-position:100% 50% } } to { background-position:300% 50% } }
   header h1 .tag { display:block; font-family:"IBM Plex Sans", sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin-top:4px; }
   #bigfrog { width:184px; height:154px; display:block; }
   #bigfrog .ring { transform-origin:center; transform-box:fill-box; animation:hypno 3.2s ease-in-out infinite; }
