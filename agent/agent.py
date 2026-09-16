@@ -160,7 +160,9 @@ class Agent:
         exposure = sum(event_spent.values())
         global_budget = max(0.0, config.MAX_TOTAL_EXPOSURE * (bankroll + exposure) - exposure)
         n_markets = n_orders = 0
-        cycle_id = self.db.cycle(balance=bankroll, n_markets=0, n_orders=0,
+        in_play = sum(abs(float(r.get("market_exposure_dollars") or 0)) for r in pos_rows)
+        cycle_id = self.db.cycle(balance=bankroll, in_play=round(in_play, 2),
+                                 value=pv if isinstance(pv := getattr(self.k, "last_portfolio_value", None), float) else None, n_markets=0, n_orders=0,
                                  edge_threshold=self.threshold, notes="")
         fc_cache = {}
         self.active_series = [t for t in config.SERIES if t not in getattr(self, "_dropped", set())]

@@ -462,3 +462,21 @@ def test_day_ahead_gate_and_fast_window(monkeypatch):
     # event lean from held tickers
     lean = a.event_directions({"E1-T80": 10, "E2-T70": -5, "E3-B75.5": 4})
     assert lean == {"E1": {"warm"}, "E2": {"cold"}}
+
+
+def test_money_history_counts_open_bets_not_just_cash():
+    # The old chart plotted cash only, so buying looked like a crash (Sep 14). Track bets too.
+    from agent.api import money_history, _settle_est
+    buy_ts = datetime(2026, 9, 15, 0, 30, tzinfo=ZoneInfo("UTC")).timestamp()
+    payout = _settle_est("KXHIGHNY-26SEP15-B76.5")
+    assert payout == datetime(2026, 9, 16, 13, tzinfo=ZoneInfo("UTC")).timestamp()
+    orders = [dict(ts=buy_ts, ticker="KXHIGHNY-26SEP15-B76.5", outcome="no", fill_count=100, avg_fill=0.3, yes_price=0.3)]
+    cycles = [dict(ts=buy_ts - 60, balance=340.0, in_play=None, value=None),
+              dict(ts=buy_ts + 60, balance=270.0, in_play=None, value=None),
+              dict(ts=payout + 60, balance=270.0, in_play=None, value=None),
+              dict(ts=payout + 600, balance=99.0, in_play=190.0, value=180.0)]
+    h = money_history(cycles, orders)
+    assert [r["in_play"] for r in h] == [0, 70.0, 0, 190.0]
+    assert [r["est"] for r in h] == [True, True, True, False]
+    assert h[1]["balance"] + h[1]["in_play"] == 340.0
+    assert h[3]["value"] == 180.0

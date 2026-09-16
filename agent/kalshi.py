@@ -129,6 +129,10 @@ class Kalshi:
     # -- portfolio ----------------------------------------------------------
     def balance(self) -> float:
         b = self._req("GET", "/portfolio/balance")
+        # Marked value of open positions, when Kalshi includes it (used by the money chart).
+        pv = b.get("portfolio_value_dollars")
+        self.last_portfolio_value = (float(pv) if pv is not None else
+                                     float(b["portfolio_value"]) / 100.0 if b.get("portfolio_value") is not None else None)
         if "balance_dollars" in b:
             return float(b["balance_dollars"])
         return float(b.get("balance", 0)) / 100.0

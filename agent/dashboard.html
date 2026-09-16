@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Anton&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-  :root { --bg:#f6f1e7; --card:#fffdf8; --line:#e6dccb; --rule:#eee6d8; --ink:#2a2620; --mut:#6d655a; --faint:#9a9186; --chip:#efe6d5; --up:#2f7a4f; --dn:#b4541e; --obs:#e08a3c; --fan:#cfe0f2; }
+  :root { --bg:#f6f1e7; --card:#fffdf8; --line:#e6dccb; --rule:#eee6d8; --ink:#2a2620; --mut:#6d655a; --faint:#9a9186; --chip:#efe6d5; --up:#2f7a4f; --dn:#b4541e; --obs:#e08a3c; --fan:#cfe0f2; --cash:#e3d8c3; --bets:#b9d3a4; }
   * { box-sizing: border-box; }
   [hidden] { display:none !important; }
   body { margin:0; color:var(--ink); font:14px/1.45 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
@@ -96,6 +96,19 @@
   .sec-h .tog { margin-left:auto; font-size:12px; color:var(--mut); background:none; border:1px solid var(--line); border-radius:3px; padding:3px 8px; cursor:pointer; font-family:inherit; }
   .sec-h .tog:hover { color:var(--ink); }
   .sec-h .mut { font-size:13px; }
+  .money { padding:14px 16px 12px; }
+  .mstats { display:flex; gap:26px; flex-wrap:wrap; margin-bottom:10px; }
+  .mstats .lbl { font-size:11px; }
+  .mstats b { font-family:'Newsreader',serif; font-weight:500; font-size:22px; display:block; }
+  .mchart { position:relative; }
+  #equity { width:100%; height:230px; display:block; }
+  .mtip { position:absolute; top:0; pointer-events:none; background:var(--card); border:1px solid var(--line); border-radius:4px; padding:6px 9px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 2px 8px rgba(42,38,32,.08); }
+  .mtip b { font-family:'IBM Plex Mono',monospace; font-weight:500; }
+  .mlegend { display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--mut); margin-top:8px; align-items:center; }
+  .mlegend .sw { display:inline-block; width:12px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  .mlegend .ln { display:inline-block; width:16px; border-top:2px solid var(--ink); margin-right:5px; vertical-align:3px; }
+  .mlegend .ln.dash { border-top-style:dashed; }
+  .mlegend .ln.startln { border-top:2px dotted var(--mut); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:4px; }
   table { width:100%; border-collapse:collapse; }
   th { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--mut); padding:8px 10px; border-bottom:1px solid #d9d0c2; text-align:left; font-weight:500; white-space:nowrap; }
@@ -292,6 +305,22 @@
     </tr></thead><tbody></tbody><tfoot></tfoot></table></div>
   </div>
 
+  <div class="sec">
+    <div class="sec-h"><h2 class="serif">Money over time</h2><span class="mut">cash in Kalshi plus what's riding on open bets. Buying moves money from cash to bets; it isn't a loss.</span></div>
+    <div class="card money">
+      <div class="mstats" id="mstats"></div>
+      <div class="mchart"><svg id="equity" role="img" aria-label="Cash and open bets over time"></svg><div class="mtip" id="mtip" hidden></div></div>
+      <div class="mlegend">
+        <span><i class="sw" style="background:var(--cash)"></i>Cash</span>
+        <span><i class="sw" style="background:var(--bets)"></i>In open bets, at cost</span>
+        <span><i class="ln"></i>Total</span>
+        <span id="mleg-val" hidden><i class="ln dash" style="border-color:var(--up)"></i>Total if sold now</span>
+        <span><i class="ln startln"></i>Start</span>
+        <span id="mleg-est" class="mut" hidden>Paler bets are estimated from fills (before per-cycle tracking began).</span>
+      </div>
+    </div>
+  </div>
+
   <div class="sec split">
     <div>
       <div class="sec-h"><h2 class="serif">Cities today</h2><span class="mut">orange: thermometer so far · blue: model spread · lines: strikes with price and odds</span></div>
@@ -311,10 +340,7 @@
 
   <div class="sec three two-col">
     <div>
-      <div class="sec-h"><h2 class="serif">Equity</h2></div>
-      <div class="card" style="padding:12px;"><svg id="equity" style="width:100%; height:150px; display:block;"></svg>
-        <div class="mut" style="font-size:12px; margin-top:4px;">balance per cycle</div></div>
-      <div class="sec-h" style="margin-top:18px;"><h2 class="serif">By city</h2></div>
+      <div class="sec-h"><h2 class="serif">By city</h2></div>
       <div class="card" id="byseries-wrap"><div class="empty" id="byseries-empty">
         <svg viewBox="0 0 120 60" width="96" height="48" aria-label="duck">
           <path fill="none" stroke="#cfe0f2" stroke-width="3" stroke-linecap="round" d="M0 48 q15 -6 30 0 t30 0 t30 0 t30 0"><animate attributeName="d" values="M0 48 q15 -6 30 0 t30 0 t30 0 t30 0;M0 48 q15 6 30 0 t30 0 t30 0 t30 0;M0 48 q15 -6 30 0 t30 0 t30 0 t30 0" dur="3s" repeatCount="indefinite"/></path>
@@ -365,7 +391,9 @@ function nameOf(ticker){   // KXLOWTLAX-26SEP13-T69 -> "Los Angeles low above 69
 
 /* ---------- ledger ---------- */
 let prevEq = null;
+let START_EQ = null;
 function ledger(s){
+  if(START_EQ===null){ START_EQ = s.start_equity; equity(); } else START_EQ = s.start_equity;
   SERIES = s.series || SERIES; MULT = s.display_mult || 1;
   $('#mult').textContent = MULT!==1 ? `×${MULT} display` : '';
   const eq = $('#eq'); const [d, c] = fmt$(s.equity).split('.');
@@ -481,17 +509,59 @@ function fitCities(){
 window.addEventListener('resize', fitCities);
 
 /* ---------- scorecard ---------- */
+let EQ = null;
 function equity(sc){
-  const e=sc.equity||[], svg=$('#equity'), W=400,H=150,L=40,R=8,T=8,B=18;
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
-  if(e.length<2){ svg.innerHTML=`<text x="${L}" y="${H/2}" fill="#6d655a" font-size="12">one more cycle and this fills in</text>`; return; }
-  const vals=e.map(r=>r.balance), lo=Math.min(...vals)*0.97, hi=Math.max(...vals)*1.03;
-  const x=i=>L+(i/(e.length-1))*(W-L-R), y=v=>T+(1-(v-lo)/(hi-lo||1))*(H-T-B);
-  let g=''; for(let k=0;k<=2;k++){ const v=lo+(hi-lo)*k/2; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-4}" y="${y(v)+4}" fill="#6d655a" font-size="10" text-anchor="end">$${(v*MULT).toFixed(0)}</text>`; }
-  g+=`<polyline points="${vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#2a2620" stroke-width="2"/>`;
-  g+=`<text x="${L}" y="${H-4}" fill="#6d655a" font-size="10">${dstr(e[0].ts)}</text><text x="${W-R}" y="${H-4}" fill="#6d655a" font-size="10" text-anchor="end">${dstr(e[e.length-1].ts)}</text>`;
+  if(sc) EQ = sc; if(!EQ) return;
+  const e=(EQ.equity||[]).filter(r=>r.balance!=null), svg=$('#equity'), tip=$('#mtip');
+  const W=Math.max(300, svg.clientWidth||800), H=230, L=62, R=12, T=10, B=24;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  if(e.length<2){ svg.innerHTML=`<text x="${L}" y="${H/2}" fill="#6d655a" font-size="12">one more cycle and this fills in</text>`; $('#mstats').innerHTML=''; return; }
+  const last=e[e.length-1], start=START_EQ;
+  const tot=r=>r.balance+(r.in_play||0), sold=r=>r.value!=null?r.balance+r.value:null;
+  const hasVal=e.some(r=>r.value!=null), hasEst=e.some(r=>r.est&&r.in_play>0);
+  $('#mleg-val').hidden=!hasVal; $('#mleg-est').hidden=!hasEst;
+  const vs=tot(last)-(start??tot(e[0]));
+  $('#mstats').innerHTML=[['Cash',fmt$(last.balance)],['In open bets',fmt$(last.in_play)],['Total at cost',fmt$(tot(last))],
+    ...(last.value!=null?[['Total if sold now',fmt$(sold(last))]]:[]),
+    ['At cost vs start',`<span class="${cls(vs)}">${signed$(vs)}</span>`]]
+    .map(([k,v])=>`<div><span class="lbl">${k}</span><b>${v}</b></div>`).join('');
+  const all=e.flatMap(r=>[tot(r),sold(r)]).filter(v=>v!=null).concat(start!=null?[start]:[]);
+  const raw=Math.max(...all)*1.05*MULT, mag=Math.pow(10,Math.floor(Math.log10(raw||1)));
+  const stp=[1,2,2.5,5,10].map(m=>m*mag/4).find(v=>v*4>=raw)||mag*2.5;   // four round gridlines
+  const lo=0, hi=stp*4/MULT;
+  const t0=e[0].ts, t1=last.ts, x=t=>L+(t-t0)/(t1-t0||1)*(W-L-R), y=v=>T+(1-(v-lo)/(hi-lo||1))*(H-T-B);
+  const step=(pts)=>pts.map(([t,v],k)=>k?`L${x(t)},${y(pts[k-1][1])}L${x(t)},${y(v)}`:`M${x(t)},${y(v)}`).join('');
+  const band=(top,bot)=>{ const a=e.map(r=>[r.ts,top(r)]), b=e.map(r=>[r.ts,bot(r)]).reverse();
+    return step(a)+b.map(([t,v],k)=>k?`L${x(b[k-1][0])},${y(v)}L${x(t)},${y(v)}`:`L${x(t)},${y(v)}`).join('')+'Z'; };
+  let g='';
+  const nt=4; for(let k=0;k<=nt;k++){ const v=hi*k/nt; g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee6d8"/><text x="${L-6}" y="${y(v)+4}" fill="#6d655a" font-size="11" text-anchor="end" font-family="IBM Plex Mono,monospace">${round$(v)}</text>`; }
+  // day ticks at local midnight
+  const d=new Date(t0*1000); d.setHours(24,0,0,0);
+  for(let ms=d.getTime(); ms<=t1*1000; ms+=86400000){ const xx=x(ms/1000); if(xx>W-R-90) break;
+    g+=`<line x1="${xx}" x2="${xx}" y1="${T}" y2="${H-B}" stroke="#eee6d8"/><text x="${xx+4}" y="${H-7}" fill="#6d655a" font-size="11">${new Date(ms).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</text>`; }
+  g+=`<path d="${band(r=>r.balance,()=>0)}" fill="var(--cash)"/>`;
+  // bets band, split so estimated stretches read paler
+  const firstReal=e.findIndex(r=>!r.est);
+  const cut=firstReal<0?e.length:firstReal;
+  const seg=(a,b,op)=>{ if(b-a<1) return; const s2=e.slice(a,Math.min(b+1,e.length));
+    const A=s2.map(r=>[r.ts,tot(r)]), Bm=s2.map(r=>[r.ts,r.balance]).reverse();
+    g+=`<path d="${step(A)+Bm.map(([t,v],k)=>k?`L${x(Bm[k-1][0])},${y(v)}L${x(t)},${y(v)}`:`L${x(t)},${y(v)}`).join('')}Z" fill="var(--bets)" opacity="${op}"/>`; };
+  seg(0,cut,0.45); seg(cut,e.length-1,1);
+  if(start!=null) g+=`<line x1="${L}" x2="${W-R}" y1="${y(start)}" y2="${y(start)}" stroke="#6d655a" stroke-dasharray="2 3"/><text x="${W-R}" y="${y(start)-5}" fill="#6d655a" font-size="11" text-anchor="end">start ${round$(start)}</text>`;
+  g+=`<path d="${step(e.map(r=>[r.ts,tot(r)]))}" fill="none" stroke="#2a2620" stroke-width="2"/>`;
+  if(hasVal){ const pv=e.filter(r=>r.value!=null); g+=`<path d="${step(pv.map(r=>[r.ts,sold(r)]))}" fill="none" stroke="#2f7a4f" stroke-width="1.5" stroke-dasharray="5 3"/>`; }
+  g+=`<line id="mcross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="#2a2620" stroke-width="1" opacity="0"/>`;
   svg.innerHTML=g;
+  const cross=$('#mcross');
+  svg.onmousemove=ev=>{ const rect=svg.getBoundingClientRect(), px=(ev.clientX-rect.left)*W/rect.width;
+    const t=t0+(px-L)/(W-L-R)*(t1-t0); let k=0; while(k<e.length-1&&e[k+1].ts<=t) k++; const r=e[k];
+    cross.setAttribute('x1',x(r.ts)); cross.setAttribute('x2',x(r.ts)); cross.setAttribute('opacity',0.35);
+    tip.hidden=false;
+    tip.innerHTML=`<div class="mut">${dstr(r.ts)}</div>Cash <b>${fmt$(r.balance)}</b><br>In bets <b>${fmt$(r.in_play)}</b>${r.est?' <span class="mut">est.</span>':''}<br>Total <b>${fmt$(tot(r))}</b>${r.value!=null?`<br>If sold now <b>${fmt$(sold(r))}</b>`:''}`;
+    const tx=(x(r.ts)/W)*rect.width; tip.style.left=Math.min(rect.width-tip.offsetWidth, Math.max(0, tx+12))+'px'; };
+  svg.onmouseleave=()=>{ tip.hidden=true; cross.setAttribute('opacity',0); };
 }
+window.addEventListener('resize', ()=>equity());
 function scorecard(sc){
   const has = sc.by_series.length>0;
   $('#byseries-empty').hidden = has; $('#byseries-tbl').hidden = !has;

@@ -36,6 +36,9 @@ MIGRATIONS = [
     "ALTER TABLE forecasts ADD COLUMN obs_json TEXT",
     "ALTER TABLE forecasts ADD COLUMN pct_json TEXT",
     "ALTER TABLE orders ADD COLUMN status TEXT",
+    # Cash alone makes buying look like losing; record what is sitting in open bets too.
+    "ALTER TABLE cycles ADD COLUMN in_play REAL",
+    "ALTER TABLE cycles ADD COLUMN value REAL",
 ]
 
 

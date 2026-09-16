@@ -42,6 +42,39 @@ def _fill_price(h):
     return px if h["outcome"] == "yes" else 1 - px
 
 
+_MON = dict(JAN=1, FEB=2, MAR=3, APR=4, MAY=5, JUN=6, JUL=7, AUG=8, SEP=9, OCT=10, NOV=11, DEC=12)
+
+
+def _settle_est(ticker):
+    """Rough payout time for a ticker like KXHIGHNY-26SEP15-B76.5: the next morning, ~13:00 UTC."""
+    import re
+    from datetime import timezone
+    m = re.search(r"-(\d{2})([A-Z]{3})(\d{2})", ticker or "")
+    if not m or m.group(2) not in _MON:
+        return None
+    d = datetime(2000 + int(m.group(1)), _MON[m.group(2)], int(m.group(3)), 13, tzinfo=timezone.utc)
+    return d.timestamp() + 86400
+
+
+def money_history(cycles, orders):
+    """Per-cycle cash, money in open bets (at cost) and marked value.
+
+    Cycles before in_play was recorded get an estimate from order fills: a fill counts as in play
+    from its order time until the market's estimated payout the next morning."""
+    fills = []
+    for o in orders:
+        end = _settle_est(o["ticker"])
+        if end and (o["fill_count"] or 0) > 0:
+            fills.append((o["ts"], end, _fill_price(o) * o["fill_count"]))
+    out = []
+    for c in cycles:
+        est = c.get("in_play") is None
+        ip = sum(v for a, b, v in fills if a <= c["ts"] < b) if est else c["in_play"]
+        out.append(dict(ts=c["ts"], balance=c["balance"], in_play=round(ip, 2),
+                        value=c.get("value"), est=est))
+    return out
+
+
 class Api:
     def __init__(self, agent):
         self.a = agent
@@ -197,7 +230,9 @@ class Api:
         # Calibration: bucket by model probability of the outcome we bought.
         cal = self.db.rows("SELECT ROUND(p_model*10)/10.0 bucket, COUNT(*) n, AVG(outcome=result) hit "
                            "FROM settlements GROUP BY bucket ORDER BY bucket")
-        equity = self.db.rows("SELECT ts, balance FROM cycles WHERE balance IS NOT NULL ORDER BY ts")
+        equity = money_history(
+            _thin(self.db.rows("SELECT ts, balance, in_play, value FROM cycles WHERE balance IS NOT NULL ORDER BY ts"), 600),
+            self.db.rows("SELECT ts, ticker, outcome, fill_count, avg_fill, yes_price FROM orders WHERE fill_count > 0"))
         daily = self.db.rows("SELECT date(ts,'unixepoch') d, SUM(pnl) pnl, COUNT(*) n FROM settlements GROUP BY d ORDER BY d")
         bias = self.db.rows("SELECT series, bias_f, updated FROM calibration")
         bench = self.db.rows("SELECT series, until, reason FROM bench WHERE until > ?", (time.time(),))
