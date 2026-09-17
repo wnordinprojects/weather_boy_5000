@@ -352,11 +352,12 @@ def test_full_cycle_with_mocked_kalshi(monkeypatch):
     assert db.rows("SELECT COUNT(*) n FROM orders")[0]["n"] == 1
     # settlement
     k.market.return_value = {"status": "settled", "result": "yes"}
+    k.settlements.return_value = []            # no Kalshi record -> falls back to our own fills
     ag.reconcile = A.Agent.reconcile.__get__(ag)
     with mock.patch.object(A.Agent, "calibrate", lambda self: None):
         ag.reconcile()
     s = db.rows("SELECT * FROM settlements")[0]
-    assert s["pnl"] == pytest.approx(5 * (1 - 0.45 - 0.02), abs=0.01)   # net of taker fee
+    assert s["pnl"] == pytest.approx(5 * (1 - 0.45), abs=0.01)
 
 
 class _FixedDT(datetime):
@@ -536,8 +537,10 @@ def test_finalized_markets_are_booked_on_kalshis_payout_day():
     }
     k = mock.MagicMock()
     k.market.side_effect = lambda t: markets[t]
+    k.settlements.return_value = []
     ag = A.Agent.__new__(A.Agent)
     ag.k, ag.db = k, db
+    db.set_state("settle_source", "kalshi")
     with mock.patch.object(A.Agent, "calibrate", lambda self: None), mock.patch.object(A.Agent, "adapt", lambda self: None):
         ag.reconcile()
     rows = {r["ticker"]: r for r in db.rows("SELECT * FROM settlements")}
@@ -546,3 +549,31 @@ def test_finalized_markets_are_booked_on_kalshis_payout_day():
     assert rows["KXHIGHNY-26SEP15-B74.5"]["pnl"] > 0
     assert datetime.utcfromtimestamp(rows["KXHIGHNY-26SEP15-B74.5"]["ts"]).date() == date(2026, 9, 16)
     assert db.unsettled_tickers() == ["KXHIGHNY-26SEP16-B80.5"]
+
+
+def test_kalshi_settlement_record_is_ground_truth_and_old_rows_are_rebooked():
+    # Our own fill log produced -$336 on one Sep 13 market; Kalshi's payout record is what actually happened.
+    from agent import agent as A
+    db = DB(os.path.join(tempfile.mkdtemp(), "k.db"))
+    db.order(series="KXLOWTBOS", ticker="KXLOWTBOS-26SEP13-B62.5", event_ticker="KXLOWTBOS-26SEP13", outcome="yes",
+             count=40, yes_price=0.30, p_model=0.5, edge=0.2, order_id="a", fill_count=40, avg_fill=30.0, status="executed")
+    db.settlement(ticker="KXLOWTBOS-26SEP13-B62.5", event_ticker="KXLOWTBOS-26SEP13", series="KXLOWTBOS",
+                  result="yes", outcome="yes", count=40, avg_fill=30.0, p_model=0.5, edge=0.2, pnl=-336.09)
+    db.set_state("adapt_seen", 1)
+    k = mock.MagicMock()
+    k.settlements.return_value = [dict(ticker="KXLOWTBOS-26SEP13-B62.5", market_result="yes", yes_count=40,
+                                       yes_total_cost=1200, no_count=0, no_total_cost=0, revenue=4000,
+                                       fee_cost="0.56", settled_time="2026-09-14T11:00:00Z")]
+    ag = A.Agent.__new__(A.Agent)
+    ag.k, ag.db = k, db
+    adapted = []
+    with mock.patch.object(A.Agent, "calibrate", lambda self: None), \
+            mock.patch.object(A.Agent, "adapt", lambda self: adapted.append(1)):
+        ag.reconcile()
+        ag.reconcile()                                  # second pass: nothing new, no double booking
+    rows = db.rows("SELECT * FROM settlements")
+    assert len(rows) == 1 and rows[0]["pnl"] == pytest.approx(40 - 12 - 0.56)
+    assert not adapted                                  # a restatement doesn't step the knobs again
+    assert db.get_state("settle_source") == "kalshi"
+    assert kalshi.settlement_pnl(dict(revenue_dollars="5.00", yes_total_cost_dollars="1.20",
+                                      no_total_cost_dollars="0", fee_cost="0.05")) == pytest.approx(3.75)

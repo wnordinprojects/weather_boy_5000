@@ -12,7 +12,7 @@ import requests
 
 from . import config
 from .db import DB
-from .kalshi import Kalshi, KalshiError
+from .kalshi import Kalshi, KalshiError, settlement_pnl
 from .strategy import plan_orders, available_at, fee, direction
 from .weather import build_forecast, fetch_observations, observed_extreme, rate_limited
 from .history import calibrate_all, station_calibration
@@ -39,6 +39,11 @@ def series_kind(series):
 
 
 SETTLED_STATUSES = ("settled", "finalized", "determined")
+
+
+def _px(h):
+    """Fill price on the YES scale, falling back to the limit price."""
+    return h["avg_fill"] if h["avg_fill"] is not None else h["yes_price"]
 
 
 def _settled_ts(m):
@@ -321,41 +326,64 @@ class Agent:
 
     # ---- reconcile settled markets, learn --------------------------------
     def reconcile(self):
-        for ticker in self.db.unsettled_tickers():
-            try:
-                m = self.k.market(ticker)
-            except KalshiError as e:
-                log.warning("market %s: %s", ticker, e)
-                continue
-            # Kalshi reports finished markets as "finalized", not "settled"; checking only "settled"
-            # booked zero results Sep 13-16 and left adapt/scorecard blind.
-            if m.get("status") not in SETTLED_STATUSES or m.get("result") not in ("yes", "no"):
-                continue
+        # Kalshi's settlement records are the source of truth. Rebuilding PnL from our own order log
+        # booked impossible numbers (-$336 on one Sep 13 market with a $179 account) from day-one rows.
+        rebook = self.db.get_state("settle_source", "") != "kalshi"
+        if rebook:
+            self.db.c.execute("DELETE FROM settlements")
+            self.db.c.commit()
+        pending = self.db.unsettled_tickers()
+        if not pending:
+            self._after_settle(rebook)
+            return
+        try:
+            recs = {r.get("ticker"): r for r in self.k.settlements()}
+        except KalshiError as e:
+            log.warning("settlements: %s", e)
+            return
+        if recs and not self.db.get_state("settle_keys_logged"):
+            log.info("kalshi settlement fields: %s", sorted(next(iter(recs.values()))))
+            self.db.set_state("settle_keys_logged", 1)
+        for ticker in pending:
             hist = self.db.order_history(ticker)
             if not hist:
                 continue
-            series = hist[0]["series"]
-            result = m["result"]  # 'yes' | 'no'
-            pnl = 0.0
-            count = 0
-            cost = 0.0
-            for h in hist:
-                n = h["fill_count"]
-                px = h["avg_fill"] if h["avg_fill"] is not None else (
-                    h["yes_price"] if h["outcome"] == "yes" else 1 - h["yes_price"])
-                # avg_fill is on the YES scale; cost of a NO contract is 1 - price.
-                c = px if h["outcome"] == "yes" else 1 - px
-                win = 1.0 if h["outcome"] == result else 0.0
-                pnl += n * (win - c - fee(c))
-                count += n
-                cost += n * c
-            self.db.settlement(ts=_settled_ts(m), ticker=ticker, event_ticker=hist[0]["event_ticker"], series=series,
+            rec = recs.get(ticker)
+            if rec is not None:
+                result = rec.get("market_result") or rec.get("result")
+                pnl = settlement_pnl(rec)
+                ts = _settled_ts(dict(settlement_ts=rec.get("settled_time")))
+            else:
+                # Not in Kalshi's list: still open, or we sold out before settlement (nothing held to pay).
+                try:
+                    m = self.k.market(ticker)
+                except KalshiError as e:
+                    log.warning("market %s: %s", ticker, e)
+                    continue
+                if m.get("status") not in SETTLED_STATUSES or m.get("result") not in ("yes", "no"):
+                    continue
+                result, pnl, ts = m["result"], None, _settled_ts(m)
+            if result not in ("yes", "no"):
+                continue
+            count = sum(h["fill_count"] for h in hist)
+            cost = sum(h["fill_count"] * (_px(h) if h["outcome"] == "yes" else 1 - _px(h)) for h in hist)
+            if pnl is None:
+                pnl = sum(h["fill_count"] * ((1.0 if h["outcome"] == result else 0.0)
+                                             - (_px(h) if h["outcome"] == "yes" else 1 - _px(h))) for h in hist)
+            self.db.settlement(ts=ts, ticker=ticker, event_ticker=hist[0]["event_ticker"], series=hist[0]["series"],
                                result=result, outcome=hist[-1]["outcome"], count=count,
                                avg_fill=cost / count if count else None, p_model=hist[-1]["p_model"],
                                edge=hist[-1]["edge"], pnl=round(pnl, 2))
-            log.info("settled %s -> %s pnl %.2f", ticker, result, pnl)
+            log.info("settled %s -> %s pnl %.2f%s", ticker, result, pnl, "" if rec is not None else " (no kalshi record)")
+        self._after_settle(rebook)
+
+    def _after_settle(self, rebook):
         n_settled = self.db.rows("SELECT COUNT(*) n FROM settlements")[0]["n"]
-        if n_settled != self.db.get_state("adapt_seen", 0):
+        if rebook:
+            # Corrected history already moved the knobs once on Sep 16; don't step them again for a restatement.
+            self.db.set_state("settle_source", "kalshi")
+            self.db.set_state("adapt_seen", n_settled)
+        elif n_settled != self.db.get_state("adapt_seen", 0):
             self.adapt()                       # only when there is new evidence
             self.db.set_state("adapt_seen", n_settled)
         self.calibrate()

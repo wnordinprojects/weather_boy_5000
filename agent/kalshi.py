@@ -141,6 +141,10 @@ class Kalshi:
         return self._paged("/portfolio/positions", "market_positions",
                            dict(count_filter="position", limit=1000))
 
+    def settlements(self, max_pages=20):
+        """Kalshi's own record of every market we held at settlement (payout, cost, fees)."""
+        return self._paged("/portfolio/settlements", "settlements", dict(limit=200), max_pages=max_pages)
+
     def orders(self, status="resting"):
         return self._paged("/portfolio/orders", "orders", dict(status=status, limit=200))
 
@@ -195,3 +199,21 @@ class Kalshi:
             legacy["no_price"] = int(round((1 - yes_price) * 100))
         legacy = {k: v for k, v in legacy.items() if v is not None}
         return self._req("POST", "/portfolio/orders", json=legacy).get("order", {})
+
+
+def _money(rec, name):
+    """Dollar value of a Kalshi money field; newer payloads use *_dollars, older use integer cents."""
+    for k in (f"{name}_dollars", f"{name}_fp"):
+        if rec.get(k) not in (None, ""):
+            return float(rec[k])
+    v = rec.get(name)
+    if v in (None, ""):
+        return 0.0
+    return float(v) if name == "fee_cost" or isinstance(v, str) and "." in v else float(v) / 100.0
+
+
+def settlement_pnl(rec):
+    """Realized PnL for one Kalshi settlement record: payout minus what we paid minus fees."""
+    return (_money(rec, "revenue") - _money(rec, "yes_total_cost") - _money(rec, "no_total_cost")
+            - _money(rec, "fee_cost"))
+
