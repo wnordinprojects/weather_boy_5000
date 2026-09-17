@@ -480,3 +480,40 @@ def test_money_history_counts_open_bets_not_just_cash():
     assert [r["est"] for r in h] == [True, True, True, False]
     assert h[1]["balance"] + h[1]["in_play"] == 340.0
     assert h[3]["value"] == 180.0
+
+
+def test_health_flags_rate_limits_stale_loop_and_blind_forecasts(monkeypatch):
+    # Sep 14: Open-Meteo 429s blinded the bot for 90 min and only the raw logs showed it.
+    import logging
+    import time as _t
+    import requests
+    from types import SimpleNamespace
+    from agent import health
+
+    health._calls.clear(); health._last_ok.clear(); health._last_err.clear(); health._issues.clear()
+
+    def fake_send(self, request, **kw):
+        r = requests.Response()
+        r.status_code = 429 if "open-meteo" in request.url else 200
+        r.request = request
+        return r
+    monkeypatch.setattr(health, "_orig_send", fake_send)
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", health._send)
+    s = requests.Session()
+    s.get("https://ensemble-api.open-meteo.com/v1/ensemble")
+    s.get("https://external-api.kalshi.com/trade-api/v2/exchange/status")
+    health._IssueLog().emit(logging.LogRecord("agent", logging.ERROR, "", 0, "cycle error 1: boom", None, None))
+
+    now = _t.time()
+    ag = SimpleNamespace(last_status=dict(ts=now - 30, markets=400, fast=False), halted=False, errors=0)
+    snap = health.snapshot(ag, config)
+    svc = {v["key"]: v for v in snap["services"]}
+    assert svc["open-meteo"]["state"] == "down" and svc["open-meteo"]["rate_limited_1h"] == 1
+    assert svc["kalshi"]["state"] == "ok"
+    assert snap["overall"] == "down"
+    chk = {c["name"]: c for c in snap["checks"]}
+    assert chk["Trading loop"]["state"] == "ok" and chk["Errors logged"]["state"] == "degraded"
+
+    ag.last_status = dict(ts=now - config.CYCLE_SECONDS * 5, markets=0)
+    chk = {c["name"]: c for c in health.snapshot(ag, config)["checks"]}
+    assert chk["Trading loop"]["state"] == "down" and chk["Forecasts"]["state"] == "down"

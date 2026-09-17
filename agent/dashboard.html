@@ -109,6 +109,22 @@
   .mlegend .ln { display:inline-block; width:16px; border-top:2px solid var(--ink); margin-right:5px; vertical-align:3px; }
   .mlegend .ln.dash { border-top-style:dashed; }
   .mlegend .ln.startln { border-top:2px dotted var(--mut); }
+  .sysbox { padding:12px 14px; }
+  .sysgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:8px 18px; }
+  .chk { display:flex; gap:9px; align-items:baseline; font-size:13px; min-width:0; }
+  .chk b { font-weight:600; white-space:nowrap; }
+  .chk span { color:var(--mut); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sd { flex:none; width:9px; height:9px; border-radius:50%; background:var(--faint); transform:translateY(-1px); }
+  .sd.ok { background:var(--up); } .sd.degraded { background:#d59a2a; } .sd.down { background:var(--dn); } .sd.idle { background:#cfc6b8; }
+  .spill { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--chip); }
+  .spill i { width:8px; height:8px; border-radius:50%; background:var(--faint); }
+  .spill.ok { color:var(--up); } .spill.ok i { background:var(--up); }
+  .spill.degraded { color:#9a6a12; background:#f7ebcf; } .spill.degraded i { background:#d59a2a; }
+  .spill.down { color:var(--dn); background:#f6dfd2; } .spill.down i { background:var(--dn); animation:sysblink 1.2s infinite; }
+  @keyframes sysblink { 50% { opacity:.25; } }
+  .sysdetail { border-top:1px solid var(--rule); margin-top:12px; padding-top:10px; }
+  #sys-issues .lv-ERROR, #sys-issues .lv-CRITICAL { color:var(--dn); }
+  .hsys { cursor:pointer; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:4px; }
   table { width:100%; border-collapse:collapse; }
   th { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--mut); padding:8px 10px; border-bottom:1px solid #d9d0c2; text-align:left; font-weight:500; white-space:nowrap; }
@@ -263,6 +279,7 @@
     <div class="status">
       <span id="mode" class="live"><i></i>…</span>
       <span id="cycle">cycle …</span>
+      <span id="hsys" class="spill hsys" title="Systems"><i></i>systems</span>
       <span id="clock" class="mono"></span>
       <span id="err"></span>
     </div>
@@ -293,6 +310,21 @@
       <div style="display:flex; gap:22px; margin-top:14px; font-size:13px;">
         <div><span class="lbl">Settled</span><br><span id="settled" class="serif" style="font-size:20px;">$0.00</span> <span id="settled-sub" class="mut"></span></div>
         <div><span class="lbl">Edge threshold</span><br><span id="thr" class="serif" style="font-size:20px;">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec" id="systems">
+    <div class="sec-h" style="align-items:center;"><h2 class="serif">Systems</h2><span id="sys-overall" class="spill"><i></i>checking…</span>
+      <span id="sys-sub" class="mut"></span>
+      <button class="tog" id="sys-tog" type="button">details</button></div>
+    <div class="card sysbox">
+      <div class="sysgrid" id="sys-checks"></div>
+      <div class="sysdetail" id="sys-detail" hidden>
+        <div class="lbl" style="margin:4px 0 8px;">Services we call</div>
+        <div class="wrap"><table id="sys-svcs"><thead><tr><th>Service</th><th>Used for</th><th>Status</th><th class="num">Calls 1h</th><th class="num">Errors</th><th class="num">429s</th><th class="num">Typical</th><th>Last success</th><th>Last error</th></tr></thead><tbody></tbody></table></div>
+        <div class="lbl" style="margin:16px 0 8px;">Warnings and errors, last 6 hours</div>
+        <div id="sys-issues" class="log"></div>
       </div>
     </div>
   </div>
@@ -588,6 +620,25 @@ function activity(a){
   rows('#settled-tbl', a.settlements.map(s=>`<tr><td class="mono mut">${dstr(s.ts)}</td><td>${esc(nameOf(s.ticker))}</td><td>${s.outcome.toUpperCase()}</td><td>${s.result.toUpperCase()}</td><td class="num mono">${s.count}</td><td class="num mono">${pct(s.p_model)}</td><td class="num mono ${cls(s.pnl)}">${fmt$(s.pnl)}</td></tr>`).join(''), 'no settlements yet');
 }
 
+/* ---------- systems ---------- */
+const SYS_WORD = {ok:'All systems operational', degraded:'Something needs a look', down:'Something is broken'};
+const sysAgo = ts => { if(!ts) return '—'; const m=(Date.now()/1000-ts)/60; return m<1?'just now':m<60?`${Math.round(m)} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} d ago`; };
+function systems(h){
+  const o=h.overall;
+  $('#sys-overall').className='spill '+o; $('#sys-overall').innerHTML=`<i></i>${SYS_WORD[o]}`;
+  $('#hsys').className='spill hsys '+o; $('#hsys').innerHTML=`<i></i>${o==='ok'?'systems ok':o==='down'?'system down':'check systems'}`;
+  const bad=[...h.checks, ...h.services].filter(c=>c.state==='down'||c.state==='degraded');
+  $('#sys-sub').textContent = bad.length ? bad.map(c=>`${c.name}: ${c.note}`).join(' · ') : `checked ${sysAgo(h.now)}`;
+  const tiles=[...h.checks.map(c=>({name:c.name,state:c.state,note:c.note})),
+               ...h.services.map(v=>({name:v.name,state:v.state,note:v.state==='ok'?`${v.calls_1h} calls, ${v.p50_ms??'–'} ms`:v.note}))];
+  $('#sys-checks').innerHTML = tiles.map(t=>`<div class="chk" title="${esc(t.note).replace(/"/g,'&quot;')}"><i class="sd ${t.state}"></i><b>${esc(t.name)}</b><span>${esc(t.note)}</span></div>`).join('');
+  rows('#sys-svcs', h.services.map(v=>`<tr><td><b>${esc(v.name)}</b></td><td class="mut">${esc(v.what)}</td><td><i class="sd ${v.state}" style="display:inline-block;margin-right:6px"></i>${v.state}</td><td class="num mono">${v.calls_1h}</td><td class="num mono ${v.errors_1h?'dn':''}">${v.errors_1h}</td><td class="num mono ${v.rate_limited_1h?'dn':''}">${v.rate_limited_1h}</td><td class="num mono">${v.p50_ms!=null?v.p50_ms+' ms':'–'}</td><td class="mut">${sysAgo(v.last_ok)}</td><td class="mut">${v.last_error?`${sysAgo(v.last_error.ts)}: ${esc(v.last_error.text)}`:'—'}</td></tr>`).join(''), 'no calls yet');
+  $('#sys-issues').innerHTML = h.issues.length ? h.issues.map(i=>`<div class="mono mut">${tstr(i.ts)}</div><div class="lv-${i.level}">${i.level==='WARNING'?'':'<b>'+i.level+'</b> '}${esc(i.text)}</div>`).join('') : '<div class="mut">—</div><div class="mut">nothing logged. Quiet is good.</div>';
+}
+$('#sys-tog').onclick = () => { const d=$('#sys-detail'); d.hidden=!d.hidden; $('#sys-tog').textContent = d.hidden?'details':'hide details'; };
+$('#hsys').onclick = () => $('#systems').scrollIntoView({behavior:'smooth'});
+async function health(){ try { systems(await get('/api/health')); } catch(e){ $('#hsys').className='spill hsys down'; $('#hsys').innerHTML='<i></i>no health data'; } }
+
 /* ---------- polling ---------- */
 function blink(){ const f=$('#bigfrog'); f.classList.remove('blink'); void f.getBoundingClientRect(); f.classList.add('blink'); }
 async function fast(){
@@ -597,6 +648,6 @@ async function fast(){
 }
 async function mid(){ try { cities(await get('/api/cities')); } catch(e){ $('#err').textContent = 'update failed: '+e.message; } }
 async function slow(){ try { const [sc,a] = await Promise.all([get('/api/scorecard'), get('/api/activity')]); scorecard(sc); activity(a); } catch(e){ $('#err').textContent = 'update failed: '+e.message; } }
-(async()=>{ await fast(); await Promise.all([mid(), slow()]); })();
-setInterval(fast, 5000); setInterval(mid, 20000); setInterval(slow, 60000);
+(async()=>{ await fast(); await Promise.all([mid(), slow(), health()]); })();
+setInterval(fast, 5000); setInterval(mid, 20000); setInterval(health, 20000); setInterval(slow, 60000);
 </script>

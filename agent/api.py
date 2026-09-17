@@ -239,6 +239,10 @@ class Api:
         return dict(by_series=by_series, by_kind=by_kind, calibration=cal, equity=equity, daily=daily,
                     bias=bias, benched=bench, threshold=self.a.threshold)
 
+    def health(self):
+        from . import health, weather
+        return health.snapshot(self.a, config, self.db, weather)
+
     def activity(self):
         orders = self.db.rows("SELECT ts,ticker,outcome,count,yes_price,p_model,edge,fill_count,avg_fill,order_id,status "
                               "FROM orders ORDER BY id DESC LIMIT 50")

@@ -18,6 +18,7 @@ def serve(agent):
         "/api/cities": api.cities,
         "/api/scorecard": api.scorecard,
         "/api/activity": api.activity,
+        "/api/health": api.health,
     }
 
     class H(BaseHTTPRequestHandler):

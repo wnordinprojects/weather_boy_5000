@@ -126,6 +126,7 @@ class Agent:
     def cycle(self):
         t0 = time.time()
         st = self.k.exchange_status()
+        self.last_status["trading_active"] = st.get("trading_active", True)
         if not st.get("trading_active", True):
             log.info("exchange not trading; skipping")
             return
@@ -478,6 +479,8 @@ def main():
     logging.basicConfig(level=config.LOG_LEVEL, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     RING.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     logging.getLogger().addHandler(RING)
+    from . import health
+    health.install()                      # count every HTTP call and warning for the Systems panel
     agent = Agent()
     from .dashboard import serve
     threading.Thread(target=serve, args=(agent,), daemon=True).start()
