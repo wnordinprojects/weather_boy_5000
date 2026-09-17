@@ -517,3 +517,32 @@ def test_health_flags_rate_limits_stale_loop_and_blind_forecasts(monkeypatch):
     ag.last_status = dict(ts=now - config.CYCLE_SECONDS * 5, markets=0)
     chk = {c["name"]: c for c in health.snapshot(ag, config)["checks"]}
     assert chk["Trading loop"]["state"] == "down" and chk["Forecasts"]["state"] == "down"
+
+
+def test_finalized_markets_are_booked_on_kalshis_payout_day():
+    # Kalshi says "finalized", not "settled"; the old check booked nothing for three days.
+    from agent import agent as A
+    db = DB(os.path.join(tempfile.mkdtemp(), "s.db"))
+    db.order(series="KXHIGHNY", ticker="KXHIGHNY-26SEP15-B72.5", event_ticker="KXHIGHNY-26SEP15", outcome="no",
+             count=10, yes_price=0.30, p_model=0.8, edge=0.1, order_id="a", fill_count=10, avg_fill=0.30, status="executed")
+    db.order(series="KXHIGHNY", ticker="KXHIGHNY-26SEP15-B74.5", event_ticker="KXHIGHNY-26SEP15", outcome="no",
+             count=4, yes_price=0.20, p_model=0.7, edge=0.1, order_id="b", fill_count=4, avg_fill=0.20, status="executed")
+    db.order(series="KXHIGHNY", ticker="KXHIGHNY-26SEP16-B80.5", event_ticker="KXHIGHNY-26SEP16", outcome="yes",
+             count=5, yes_price=0.10, p_model=0.2, edge=0.1, order_id="c", fill_count=5, avg_fill=0.10, status="executed")
+    markets = {
+        "KXHIGHNY-26SEP15-B72.5": dict(status="finalized", result="yes", settlement_ts="2026-09-16T11:10:28.404153Z"),
+        "KXHIGHNY-26SEP15-B74.5": dict(status="finalized", result="no", settlement_ts="2026-09-16T11:10:28.404153Z"),
+        "KXHIGHNY-26SEP16-B80.5": dict(status="active", result=""),
+    }
+    k = mock.MagicMock()
+    k.market.side_effect = lambda t: markets[t]
+    ag = A.Agent.__new__(A.Agent)
+    ag.k, ag.db = k, db
+    with mock.patch.object(A.Agent, "calibrate", lambda self: None), mock.patch.object(A.Agent, "adapt", lambda self: None):
+        ag.reconcile()
+    rows = {r["ticker"]: r for r in db.rows("SELECT * FROM settlements")}
+    assert set(rows) == {"KXHIGHNY-26SEP15-B72.5", "KXHIGHNY-26SEP15-B74.5"}      # open market untouched
+    assert rows["KXHIGHNY-26SEP15-B72.5"]["pnl"] < 0                               # bet NO, it hit
+    assert rows["KXHIGHNY-26SEP15-B74.5"]["pnl"] > 0
+    assert datetime.utcfromtimestamp(rows["KXHIGHNY-26SEP15-B74.5"]["ts"]).date() == date(2026, 9, 16)
+    assert db.unsettled_tickers() == ["KXHIGHNY-26SEP16-B80.5"]

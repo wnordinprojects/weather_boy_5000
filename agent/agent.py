@@ -38,6 +38,18 @@ def series_kind(series):
     return "low" if series.startswith("KXLOWT") else "high"
 
 
+SETTLED_STATUSES = ("settled", "finalized", "determined")
+
+
+def _settled_ts(m):
+    """Kalshi's own payout time, so backfilled results land on the right day."""
+    raw = m.get("settlement_ts") or m.get("expiration_time")
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return time.time()
+
+
 class Agent:
     def __init__(self):
         self.k = Kalshi()
@@ -315,7 +327,9 @@ class Agent:
             except KalshiError as e:
                 log.warning("market %s: %s", ticker, e)
                 continue
-            if m.get("status") != "settled" or not m.get("result"):
+            # Kalshi reports finished markets as "finalized", not "settled"; checking only "settled"
+            # booked zero results Sep 13-16 and left adapt/scorecard blind.
+            if m.get("status") not in SETTLED_STATUSES or m.get("result") not in ("yes", "no"):
                 continue
             hist = self.db.order_history(ticker)
             if not hist:
@@ -335,7 +349,7 @@ class Agent:
                 pnl += n * (win - c - fee(c))
                 count += n
                 cost += n * c
-            self.db.settlement(ticker=ticker, event_ticker=hist[0]["event_ticker"], series=series,
+            self.db.settlement(ts=_settled_ts(m), ticker=ticker, event_ticker=hist[0]["event_ticker"], series=series,
                                result=result, outcome=hist[-1]["outcome"], count=count,
                                avg_fill=cost / count if count else None, p_model=hist[-1]["p_model"],
                                edge=hist[-1]["edge"], pnl=round(pnl, 2))

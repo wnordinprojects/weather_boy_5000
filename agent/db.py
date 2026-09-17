@@ -81,7 +81,7 @@ class DB:
     def forecast(self, **kw):    return self._ins("forecasts", ts=time.time(), **kw)
     def decision(self, **kw):    return self._ins("decisions", ts=time.time(), **kw)
     def order(self, **kw):       return self._ins("orders", ts=time.time(), **kw)
-    def settlement(self, **kw):  return self._ins("settlements", ts=time.time(), **kw)
+    def settlement(self, **kw):  return self._ins("settlements", **{"ts": time.time(), **kw})
     def skip(self, **kw):        return self._ins("skips", ts=time.time(), **kw)
 
     def bias(self, series):
