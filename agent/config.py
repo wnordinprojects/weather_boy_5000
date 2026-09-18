@@ -159,3 +159,22 @@ DAY_AHEAD_EVENT_FRACTION = _env("DAY_AHEAD_EVENT_FRACTION", 0.10, float)
 # and total open exposure is capped at this fraction of equity.
 MAX_TOTAL_EXPOSURE = _env("MAX_TOTAL_EXPOSURE", 0.7, float)
 
+
+# ---- Longshot (moonshot) control ------------------------------------------
+# Calibration through Sep 17: model-p buckets 0.1-0.5 produced 2 hits in 56 settled trades
+# where ~14 were expected; only p >= 0.7 has been honest. So below LONGSHOT_P_MAX the model's
+# disagreement with the market is shrunk, the bet must clear a higher edge bar, and the whole
+# class shares a rolling-24h dollar budget. Keeps the lottery-ticket upside; bounds the bleed.
+LONGSHOT_P_MAX = _env("LONGSHOT_P_MAX", 0.60, float)
+# Fraction of the model's move away from the market that survives on a longshot. 1.0 = off.
+LONGSHOT_SHRINK = _env("LONGSHOT_SHRINK", 0.5, float)
+# Multiplier on the edge threshold for longshots.
+LONGSHOT_EDGE_MULT = _env("LONGSHOT_EDGE_MULT", 1.25, float)
+# Max fraction of equity that may be spent opening longshots in any rolling 24 hours.
+LONGSHOT_DAILY_FRACTION = _env("LONGSHOT_DAILY_FRACTION", 0.10, float)
+
+# ---- Knob reset -----------------------------------------------------------
+# adapt() walked EDGE_THRESHOLD to 0.12 on settlement rows later proven wrong (the -$531 phantom,
+# see STATE.md). Bump this string to reset the stored threshold to the seed above once on boot
+# and let it re-adapt from clean data.
+THRESHOLD_EPOCH = _env("THRESHOLD_EPOCH", "2026-09-17-clean-settlements")

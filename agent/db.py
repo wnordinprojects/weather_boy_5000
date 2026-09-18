@@ -122,6 +122,29 @@ class DB:
             "SELECT DISTINCT o.ticker FROM orders o LEFT JOIN settlements s ON s.ticker=o.ticker "
             "WHERE o.fill_count > 0 AND s.ticker IS NULL")]
 
+    def longshot_spent(self, p_max, since_s=86400):
+        """Dollars opened on sub-`p_max` bets in the last `since_s` seconds.
+
+        Counts filled contracts plus anything still resting, so the rolling budget can't be
+        stacked by orders that haven't come back yet.
+        """
+        total = 0.0
+        for r in self.c.execute(
+                "SELECT outcome, count, fill_count, avg_fill, yes_price, status FROM orders "
+                "WHERE ts > ? AND p_model IS NOT NULL AND p_model < ? "
+                "AND (order_id IS NULL OR order_id NOT IN ('dry','ERR'))",
+                (time.time() - since_s, p_max)):
+            n = float(r["fill_count"] or 0)
+            if n <= 0:
+                n = float(r["count"] or 0) if r["status"] == "resting" else 0.0
+            if n <= 0:
+                continue
+            px = r["avg_fill"] if r["avg_fill"] is not None else r["yes_price"]
+            if px is None:
+                continue
+            total += n * (float(px) if r["outcome"] == "yes" else 1 - float(px))
+        return total
+
     def recent_settlements(self, series=None, n=50):
         q = "SELECT * FROM settlements" + (" WHERE series=?" if series else "") + " ORDER BY ts DESC LIMIT ?"
         args = (series, n) if series else (n,)

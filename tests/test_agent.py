@@ -577,3 +577,60 @@ def test_kalshi_settlement_record_is_ground_truth_and_old_rows_are_rebooked():
     assert db.get_state("settle_source") == "kalshi"
     assert kalshi.settlement_pnl(dict(revenue_dollars="5.00", yes_total_cost_dollars="1.20",
                                       no_total_cost_dollars="0", fee_cost="0.05")) == pytest.approx(3.75)
+
+
+def test_longshot_probability_is_shrunk_toward_the_market():
+    # Model says 'above 95' is 30%; market mid is 10c. Blended at w=1.0 the model owns it.
+    fc = _fc([96] * 3 + [80] * 7)                       # P(>95) = 0.3
+    m = _m("E-T95", "greater", lo=94.5, yb=0.08, ya=0.12)
+    c = strategy.evaluate(fc, m, 0.06, model_weight=1.0)
+    assert c.outcome == "yes" and c.longshot
+    # p_mkt = 0.10, raw model p = 0.30 -> shrink keeps half the disagreement -> 0.20
+    assert c.p == pytest.approx(0.20, abs=1e-6)
+    # and it has to clear a higher bar than an ordinary bet
+    assert c.threshold == pytest.approx(0.06 * config.LONGSHOT_EDGE_MULT)
+    # the confident side of the same book is untouched
+    assert strategy.longshot_p(0.85, 0.5, False) == (0.85, False)
+    # floors are exempt: the thermometer decided them, not the model
+    assert strategy.longshot_p(0.05, 0.3, True) == (0.05, False)
+
+
+def test_longshot_budget_caps_the_class_but_does_not_ban_it():
+    fc = _fc([96] * 4 + [80] * 6)                       # P(>95) = 0.4
+    m = _m("E-T95", "greater", lo=94.5, yb=0.03, ya=0.05)
+    free, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0)
+    assert free and free[0]["longshot"] and free[0]["spent"] > 2.0
+    capped, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0, longshot_budget=2.0)
+    # still buys - moonshot upside preserved - just not with the whole bankroll
+    assert capped and capped[0]["count"] > 0 and capped[0]["spent"] <= 2.0
+    spent, _ = strategy.plan_orders(fc, [m], 1000, {}, 0.06, 0, model_weight=1.0, longshot_budget=0.0)
+    assert spent == []
+    # a high-confidence bet ignores the longshot wallet entirely
+    fc2 = _fc([96] * 9 + [80])                          # P(>95) = 0.9
+    m2 = _m("E-T95", "greater", lo=94.5, yb=0.50, ya=0.55)
+    sure, _ = strategy.plan_orders(fc2, [m2], 1000, {}, 0.06, 0, model_weight=1.0, longshot_budget=0.0)
+    assert sure and not sure[0]["longshot"] and sure[0]["spent"] > 2.0
+
+
+def test_longshot_spend_is_tracked_across_cycles():
+    db = DB(os.path.join(tempfile.mkdtemp(), "t.db"))
+    db.order(series="S", ticker="E-T95", event_ticker="E", outcome="yes", count=100, yes_price=0.05,
+             p_model=0.20, edge=0.1, order_id="a", fill_count=100, avg_fill=0.05, raw="", status="executed")
+    db.order(series="S", ticker="E-T96", event_ticker="E", outcome="no", count=10, yes_price=0.90,
+             p_model=0.15, edge=0.1, order_id="b", fill_count=0, avg_fill=None, raw="", status="resting")
+    db.order(series="S", ticker="E-T85", event_ticker="E", outcome="yes", count=100, yes_price=0.60,
+             p_model=0.75, edge=0.1, order_id="c", fill_count=100, avg_fill=0.60, raw="", status="executed")
+    # $5 filled + $1 resting; the 0.75 bet is not a longshot and is not counted
+    assert db.longshot_spent(0.60) == pytest.approx(6.0)
+
+
+def test_threshold_epoch_resets_a_threshold_adapted_on_bad_data():
+    from agent.agent import reset_threshold_if_stale
+    db = DB(os.path.join(tempfile.mkdtemp(), "t.db"))
+    db.set_state("edge_threshold", 0.12)
+    # first boot on a new epoch: back to the seed
+    assert reset_threshold_if_stale(db, 0.12) == pytest.approx(config.EDGE_THRESHOLD)
+    assert db.get_state("edge_threshold") == pytest.approx(config.EDGE_THRESHOLD)
+    # later boots leave whatever adapt() has since learned alone
+    db.set_state("edge_threshold", 0.09)
+    assert reset_threshold_if_stale(db, 0.09) == pytest.approx(0.09)

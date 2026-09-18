@@ -55,6 +55,22 @@ def _settled_ts(m):
         return time.time()
 
 
+def reset_threshold_if_stale(db, threshold):
+    """Return the edge threshold, reset to the config seed when THRESHOLD_EPOCH has changed.
+
+    adapt() only ever nudges the stored threshold, so a bad settlement history leaves it stuck
+    high forever. Bumping THRESHOLD_EPOCH is the one-time undo. model_weight is left alone: it
+    sits at its floor, which is the safe end.
+    """
+    if db.get_state("threshold_epoch", "") == config.THRESHOLD_EPOCH:
+        return threshold
+    db.set_state("edge_threshold", config.EDGE_THRESHOLD)
+    db.set_state("threshold_epoch", config.THRESHOLD_EPOCH)
+    log.info("edge threshold reset %.3f -> %.3f (epoch %s)", threshold, config.EDGE_THRESHOLD,
+             config.THRESHOLD_EPOCH)
+    return config.EDGE_THRESHOLD
+
+
 class Agent:
     def __init__(self):
         self.k = Kalshi()
@@ -64,6 +80,7 @@ class Agent:
         self.halted = False
         self.threshold = self.db.get_state("edge_threshold", config.EDGE_THRESHOLD)
         self.model_weight = self.db.get_state("model_weight", config.MODEL_WEIGHT)
+        self.threshold = reset_threshold_if_stale(self.db, self.threshold)
         self.active_series = list(config.SERIES)
         self._dropped = set()
         self.last_status = {}
@@ -177,6 +194,11 @@ class Agent:
         lean = self.event_directions(positions)
         exposure = sum(event_spent.values())
         global_budget = max(0.0, config.MAX_TOTAL_EXPOSURE * (bankroll + exposure) - exposure)
+        # Longshots get their own rolling-24h wallet. The model's sub-0.6 probabilities have been
+        # inflated (2 hits in 56 settled trades), so cap what the whole class can cost in a day
+        # rather than banning it and giving up the 25x tickets.
+        ls_spent = self.db.longshot_spent(config.LONGSHOT_P_MAX)
+        longshot_budget = max(0.0, config.LONGSHOT_DAILY_FRACTION * (bankroll + exposure) - ls_spent)
         n_markets = n_orders = 0
         in_play = sum(abs(float(r.get("market_exposure_dollars") or 0)) for r in pos_rows)
         cycle_id = self.db.cycle(balance=bankroll, in_play=round(in_play, 2),
@@ -247,7 +269,8 @@ class Agent:
                 orders, decisions = plan_orders(fc, markets, bankroll, positions, self.threshold,
                                                 event_spent.get(evt, 0.0), costs, self.model_weight,
                                                 corr=corr, global_budget=global_budget,
-                                                event_fraction=config.DAY_AHEAD_EVENT_FRACTION if day_ahead else None)
+                                                event_fraction=config.DAY_AHEAD_EVENT_FRACTION if day_ahead else None,
+                                                longshot_budget=longshot_budget)
                 if lows_blocked:
                     # Floors are already decided by the thermometer; only speculative lows wait.
                     floors = {o["ticker"] for o in orders if o.get("floor")}
@@ -264,6 +287,8 @@ class Agent:
                         if o.get("direction"):
                             lean.setdefault(evt, set()).add(o["direction"])
                         global_budget = max(0.0, global_budget - o.get("spent", 0.0))
+                        if o.get("longshot"):
+                            longshot_budget = max(0.0, longshot_budget - o.get("spent", 0.0))
                         if not config.DRY_RUN:
                             bankroll -= o["count"] * (o["yes_price"] if o["outcome"] == "yes" else 1 - o["yes_price"])
         self.db.c.execute("UPDATE cycles SET n_markets=?, n_orders=?, notes=? WHERE id=?",
@@ -271,7 +296,8 @@ class Agent:
         self.db.c.commit()
         self.last_status = dict(ts=time.time(), balance=bankroll, markets=n_markets, orders=n_orders,
                                 threshold=self.threshold, model_weight=self.model_weight, halted=self.halted)
-        log.info("cycle done: balance %.2f markets %d orders %d thr %.3f", bankroll, n_markets, n_orders, self.threshold)
+        log.info("cycle done: balance %.2f markets %d orders %d thr %.3f ls_left %.2f",
+                 bankroll, n_markets, n_orders, self.threshold, longshot_budget)
 
     def execute(self, o, series):
         """Take the ask when the spread is tight; otherwise rest at mid and let the market come to us."""

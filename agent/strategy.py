@@ -126,6 +126,7 @@ class Candidate:
     threshold: float
     floor: bool = False # thermometer already decided this market
     direction: str | None = None   # 'warm' | 'cold' | None (pays when temp is higher / lower)
+    longshot: bool = False         # model gave this side < LONGSHOT_P_MAX; its p was shrunk
 
 
 def floor_margin(fc: Forecast, m):
@@ -177,6 +178,19 @@ def complement_norm(markets):
     return total if abs(total - 1) > config.COMPLEMENT_TOL else 1.0
 
 
+def longshot_p(p_side, mkt_side, floor):
+    """(probability to trade on, is_longshot) for one side of a market.
+
+    Settled calibration says the model's low-probability claims are inflated: p buckets 0.1-0.5
+    hit 2 of 56 when ~14 were expected, while p >= 0.7 was honest. Below LONGSHOT_P_MAX we keep
+    only LONGSHOT_SHRINK of the model's disagreement with the market. Floors are exempt: the
+    thermometer, not the model, decides those.
+    """
+    if floor or p_side >= config.LONGSHOT_P_MAX:
+        return p_side, False
+    return mkt_side + (p_side - mkt_side) * config.LONGSHOT_SHRINK, True
+
+
 def evaluate(fc: Forecast, m, threshold, model_weight=None, mkt_norm=1.0) -> Candidate | None:
     """Best side to buy on this market, or None.
 
@@ -205,11 +219,15 @@ def evaluate(fc: Forecast, m, threshold, model_weight=None, mkt_norm=1.0) -> Can
     lo, hi = config.MIN_OPEN_PRICE, config.MAX_OPEN_PRICE
     cands = []
     if lo <= ya <= hi:
-        e = p - ya - fee(ya)
-        cands.append(Candidate(m, "yes", p, ya, ya, fee(ya), e, sat, thr, floor, direction(m, "yes")))
+        ps, ls = longshot_p(p, p_mkt, floor)
+        e = ps - ya - fee(ya)
+        cands.append(Candidate(m, "yes", ps, ya, ya, fee(ya), e, sat,
+                               thr * (config.LONGSHOT_EDGE_MULT if ls else 1.0), floor, direction(m, "yes"), ls))
     if lo <= na <= hi:
-        e = (1 - p) - na - fee(na)
-        cands.append(Candidate(m, "no", 1 - p, na, 1 - na, fee(na), e, sat, thr, floor, direction(m, "no")))
+        ps, ls = longshot_p(1 - p, 1 - p_mkt, floor)
+        e = ps - na - fee(na)
+        cands.append(Candidate(m, "no", ps, na, 1 - na, fee(na), e, sat,
+                               thr * (config.LONGSHOT_EDGE_MULT if ls else 1.0), floor, direction(m, "no"), ls))
     if not cands:
         return None
     best = max(cands, key=lambda c: c.edge)
@@ -217,7 +235,7 @@ def evaluate(fc: Forecast, m, threshold, model_weight=None, mkt_norm=1.0) -> Can
 
 
 def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spent, costs=None, model_weight=None,
-                corr=None, global_budget=None, event_fraction=None):
+                corr=None, global_budget=None, event_fraction=None, longshot_budget=None):
     """Decide orders for one event. Returns (orders, decisions).
 
     positions: {ticker: signed contracts (+yes, -no)}
@@ -226,6 +244,7 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
     corr: {'warm': n, 'cold': n} other open events already leaning that way (correlation shrink)
     global_budget: dollars of new exposure still allowed across all events this cycle (None = no cap)
     event_fraction: override for MAX_EVENT_FRACTION (day-ahead events get a smaller one)
+    longshot_budget: dollars still allowed on sub-LONGSHOT_P_MAX bets in the rolling 24h (None = no cap)
     """
     costs = costs or {}
     corr = corr or {}
@@ -286,6 +305,10 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
             pool = floor_budget if c.floor else budget
             if global_budget is not None:
                 pool = min(pool, global_budget)
+            if c.longshot and longshot_budget is not None:
+                # The whole longshot class shares one rolling-24h wallet, so a bad day costs
+                # LONGSHOT_DAILY_FRACTION of equity and no more.
+                pool = min(pool, longshot_budget)
             affordable = int(pool // c.price) if c.price > 0 else 0
             count = min(count, affordable)
             if count <= 0:
@@ -297,11 +320,14 @@ def plan_orders(fc: Forecast, markets, bankroll, positions, threshold, event_spe
                 budget -= spent
             if global_budget is not None:
                 global_budget -= spent
+            if c.longshot and longshot_budget is not None:
+                longshot_budget -= spent
             if not already and not c.floor:
                 buys += 1
         yb, ya, *_ = prices(c.m)
         orders.append(dict(ticker=c.m["ticker"], event_ticker=c.m.get("event_ticker"),
                            outcome=c.outcome, count=count, yes_price=c.yes_price,
                            p_model=c.p, edge=c.edge, action=action, yes_bid=yb, yes_ask=ya,
-                           floor=c.floor, direction=c.direction, spent=count * c.price))
+                           floor=c.floor, direction=c.direction, longshot=c.longshot,
+                           spent=count * c.price))
     return orders, decisions
